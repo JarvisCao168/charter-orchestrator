@@ -1,9 +1,9 @@
 # Charter Orchestrator — Skill Definition
 
 > **Skill 名称**：Charter Orchestrator
-> **Version**: 1.0.0
+> **Version**: 1.1.0
 > **Charter / 章程**: 智能体团队协作章程（终极完整版）
-> **Release / 发布**: 2026-09-14 (first public release)
+> **Release / 发布**: 2026-09-14 v1.0.0 (first public) · 2026-09-15 v1.1.0 (executable)
 > **许可证**：MIT
 > **定位**：Agent之上的全链路治理与编排框架 —— 定义 Agent 怎么干活、干到什么标准、什么时候该停下来让人确认
 
@@ -92,6 +92,28 @@ Charter Orchestrator 是一个"治理+流程+工具"三位一体的智能体编�
 | v1.0 | 13类 | Checkpoint状态管理规则、多模型调度规则、TDD纪律规则、Guardrails安全护栏规则 |
 
 ---
+
+## 一·五、v1.1 可执行核心 / v1.1 Executable Core
+
+v1.1 把 v1.0 的规范变成可运行代码。`charter/` 包提供真实实现，所有 P0 缺口已补齐：
+
+| 模块 / Module | 能力 / Capability | 状态 / Status |
+|------|------|------|
+| `charter/core.py` | 10 阶段状态机 + 门禁 + Checkpoint 快照/回滚 | ✅ 可执行 |
+| `charter/governance.py` | 13 类规则 + 6 道防线 + Guardrails + TDD 引擎 | ✅ 可执行 |
+| `charter/observability.py` | 全链路 Trace（OTel 兼容） | ✅ 可执行 |
+| `charter/evaluation.py` | LLM-as-judge 评估 + 14 类故障注入矩阵 | ✅ 可执行（P0 新增） |
+| `charter/memory.py` | 跨会话 Agent 记忆（SQLite + 召回） | ✅ 可执行（P0 新增） |
+| `charter/cli.py` | `python -m charter.cli demo` 5 分钟跑通 | ✅ 可执行 |
+| `tests/` | 10 个可执行测试证明框架真能拦截违规 | ✅ 通过 |
+
+**一键跑通 / One-liner:**
+```bash
+pip install -e . && python -m charter.cli demo
+```
+
+> v1.0 是"规范"（你读它、按它建团队）；v1.1 是"引擎"（你 `import charter` 直接跑）。
+> v1.0 was the **spec**; v1.1 is the **engine**.
 
 ## 二、工具定义 / Tool Definitions
 
@@ -814,6 +836,16 @@ v1.0 为首次公开发布版本，包含以下全量能力：
 
 ---
 
+
+### v2.0 路线图 / v2.0 Roadmap（愿景 / Vision）
+
+- **可观测性升级**：`trace_operation` 输出标准 OpenTelemetry，接入 Grafana / Jaeger
+- **加密身份 / Cryptographic Identity**：每个 Agent 签发 X.509 证书，工具调用 mTLS 签名，防重放
+- **自进化治理 / Self-Evolving Governance**：基于 `query_trace` 历史自动建议规则调整
+- **向量记忆 / Vector Memory**：`charter/memory.py` 升级为向量检索后端（当前为 SQLite 关键词召回）
+- **多仓库协作 / Multi-repo**：跨 repo 的 checkpoint 共享与团队级审计
+- **SOP 模板市场 / Template Marketplace**：社区发布行业 SOP（金融 / 医疗 / 电商）
+- **生产评估闭环 / Continuous Eval**：`evaluate_agent` 接入 LLM 打分器，输出回归检测
 ## 十二、术语表 / Glossary
 
 | 术语 | 定义 |
