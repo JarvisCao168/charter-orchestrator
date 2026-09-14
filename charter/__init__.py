@@ -9,7 +9,7 @@ Quick start:
     from charter import init_project, advance_stage, confirm_gate, query_status
     python -m charter.cli demo
 """
-__version__ = "2.1.0"
+__version__ = "2.2.0"
 
 from .core import (
     init_project, advance_stage, confirm_gate, query_status,
@@ -59,6 +59,17 @@ if HAS_CRYPTO:
         X509IdentityError,
     )
 
+# --- v2.2 production linkages ---
+from .llm_judge_online import (
+    JudgeBackend, AgnesJudge, OpenAIJudge, OfflineJudge, make_judge,
+    score_with_judge, JUDGE_SYSTEM,
+)
+from .session_store import SessionStore, DEFAULT_DB
+from .trace_link import (
+    TraceLink, JaegerPush, TempoPush, JaegerQuery,
+    aggregate_traces, slo_summary,
+)
+
 
 __all__ = [
     # v1.1 core
@@ -82,4 +93,10 @@ __all__ = [
     "AgnesEmbedder", "OpenAIEmbedder", "NullEmbedder", "pick_embedder", "Embedder",
     "TemplateMarketplace", "TemplatePR", "validate_template", "render_pr",
     "TemplateSpecError",
+    # v2.2
+    "JudgeBackend", "AgnesJudge", "OpenAIJudge", "OfflineJudge",
+    "make_judge", "score_with_judge", "JUDGE_SYSTEM",
+    "SessionStore", "DEFAULT_DB",
+    "TraceLink", "JaegerPush", "TempoPush", "JaegerQuery",
+    "aggregate_traces", "slo_summary",
 ]
