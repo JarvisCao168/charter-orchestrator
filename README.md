@@ -571,3 +571,24 @@ Install: `pip install charter-orchestrator` (stdlib-only core). Optional extras:
 - **SPIFFE / PKI-issued identity** — `charter/spiffe.py`: SPIFFE ID grammar,
   trust-domain CA, SVID issuance with URI SAN, `verify_svid` / `bundle_svid`
   for mTLS presentation.
+## v2.4 — Multi-System Linkages
+
+- **Multi-model judge consensus** — `charter/judge_consensus.py`: run N judge
+  backends (Agnes + OpenAI, or N models), aggregate mean/median per-dimension
+  scores, majority verdict, agreement matrix + confidence. Offline-safe
+  (falls back to the heuristic judge when no live backends).
+- **Cross-session memory compression** — `charter/memory_compress.py`:
+  summarize a session's raw episodes into key facts + a one-line summary
+  (LLM when a key is set, heuristic otherwise), re-store them with higher
+  salience so future sessions recall the distilled knowledge.
+- **Trace SLO → real alerting** — `charter/slo_alerts.py`: turn breached
+  SLOs into Alertmanager / PagerDuty payloads; `fire(backend=...)` is
+  retry-safe (carries the payload even when the endpoint is unreachable).
+- **SPIFFE → real SPIRE Server** — `charter/spiffe_grpc.py`: gRPC gateway
+  that fetches SVIDs from a live SPIRE `svid` service when a channel is
+  bound, and falls back to the local `TrustDomain` issuer otherwise
+  (same call shape, CI-safe).
+- **Template PR auto-CI + community scoring** — `charter/pr_community.py`:
+  `run_template_ci(spec)` runs the host repo's spec-integrity gate on a
+  candidate template; `community_score` / `rank_templates` aggregate user
+  helpful/adopted/reported signals into a weighted per-template score.
