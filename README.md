@@ -8,11 +8,28 @@
 
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Skill Definition](https://img.shields.io/badge/Skill-v1.0.0-green.svg)](SKILL.md)
+[![Skill Definition](https://img.shields.io/badge/Skill-v1.1.0-green.svg)](SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/Platform-Agent--Independent-brightgreen.svg)](.)
 
 ---
+
+
+## ⚡ 可执行 / Runnable (v1.1)
+
+v1.1 把治理规范变成了可运行的 Python 包。5 分钟跑通：
+
+```bash
+git clone https://github.com/JarvisCao168/charter-orchestrator.git
+cd charter-orchestrator
+pip install -e .
+python -m charter.cli demo     # 10 阶段 + 门禁 + TDD + Guardrails + 评估全跑通
+```
+
+- **executable core**: `charter/` (core, governance, observability, evaluation, memory)
+- **10 automated tests**: `python -m pytest tests/`
+- **quick start**: [`docs/quickstart.md`](docs/quickstart.md)
+- **fault-coverage proof**: [`docs/fault_coverage.md`](docs/fault_coverage.md)
 
 ## 目录 / Table of Contents
 
@@ -405,7 +422,7 @@ Charter Orchestrator 可与以下主流框架和项目集成：
 
 | 版本 / Version | 状态 / Status | 核心内容 / Core Content |
 |------|------|----------|
-| **v1.0.0** | **当前版本（首版发布）** | 20 工具 · 47 Skills · 13 类治理规则 · 10 阶段 SOP · Checkpoint / 多模型调度 / TDD / Guardrails / 自动驾驶 / 可观测性 |
+| **v1.1.0** | **当前版本（首版发布）** | 20 工具 · 47 Skills · 13 类治理规则 · 10 阶段 SOP · Checkpoint / 多模型调度 / TDD / Guardrails / 自动驾驶 / 可观测性 |
 | v1.1.0 | 规划 | 社区模板市场、多仓库协作、自定义阶段模板 |
 | v2.0.0 | 愿景 | 自进化治理规则、跨项目知识图谱、AI 驱动的流程优化 |
 
