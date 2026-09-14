@@ -892,7 +892,12 @@ v1.0 为首次公开发布版本，包含以下全量能力：
 - ✅ LLM 嵌入后端 Agnes/OpenAI（`charter/llm_embed.py`，接入 VectorMemory）
 - ✅ 行业模板 PR 治理流（`charter/template_pr.py`）
 
-**v2.2 下一步 / v2.2 Next:**
+**v2.2 已实现 / v2.2 Shipped:**
+- ✅ 在线 LLM-as-judge（`charter/llm_judge_online.py`，Agnes/OpenAI 后端 + 离线 fallback）
+- ✅ 跨会话持久化记忆（`charter/session_store.py`，SQLite WAL，语义召回，跨进程安全）
+- ✅ OTel → Jaeger/Tempo 完整链路（`charter/trace_link.py`，重试安全导出 + 查询 + SLO 摘要）
+
+**v2.3 候选 / v2.3 Candidates:**
 - 真实 mTLS 双向认证（server 侧证书校验）
 - 模板市场接 GitHub PR（`render_pr` → 自动开 PR）
 - LLM 嵌入接 `AgnesEmbedder` 的生产 endpoint + 缓存
