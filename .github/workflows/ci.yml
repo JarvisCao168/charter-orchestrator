@@ -18,10 +18,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install
-        run: pip install -e . pytest
+        run: pip install -e . pytest cryptography
       - name: Validate spec integrity
         run: python scripts/validate_skills.py
       - name: Run executable tests
         run: python -m pytest tests/
-      - name: run: pip install -e . pytest cryptography
+      - name: Run governed demo
         run: python -m charter.cli demo
