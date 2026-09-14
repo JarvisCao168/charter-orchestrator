@@ -555,3 +555,19 @@ v2.0 closes the four production gaps named in the 2026 peer review:
 
 Install: `pip install charter-orchestrator` (stdlib-only core). Optional extras:
 `[crypto]` (X.509/mTLS), `[llm]` (HTTP embedders + online judge).
+## v2.3 — Production Linkage Hardening
+
+- **Real mTLS** — `charter/mtls.py`: server-side cert verification against a
+  `TrustAnchor` (chain + EKU + validity + revocation + CA signature), with a
+  simplified PEM-metadata fallback when `cryptography` is absent.
+- **Template marketplace → GitHub PR** — `charter/github_pr.py`:
+  `open_template_pr(...)` validates a candidate SOP template and opens a (draft)
+  PR on GitHub via REST; offline-safe (no token → returns a fully-prepared
+  draft payload instead of raising).
+- **Production embedding endpoint + cache** — `charter/embed_cache.py`:
+  two-level (LRU + SQLite) cache wrapping the Agnes/OpenAI embedders;
+  `production_embedder(...)` auto-detects the key and falls back to the
+  offline hashing embedder so CI stays green.
+- **SPIFFE / PKI-issued identity** — `charter/spiffe.py`: SPIFFE ID grammar,
+  trust-domain CA, SVID issuance with URI SAN, `verify_svid` / `bundle_svid`
+  for mTLS presentation.
