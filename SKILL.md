@@ -1,9 +1,9 @@
 # Charter Orchestrator — Skill Definition
 
 > **Skill 名称**：Charter Orchestrator
-> **Version**: 1.1.0
+> **Version**: 2.0.0
 > **Charter / 章程**: 智能体团队协作章程（终极完整版）
-> **Release / 发布**: 2026-09-14 v1.0.0 (first public) · 2026-09-15 v1.1.0 (executable)
+> **Release / 发布**: 2026-09-14 v1.0.0 · 2026-09-15 v1.1.0 · 2026-09-15 v2.0.0 (production layers)
 > **许可证**：MIT
 > **定位**：Agent之上的全链路治理与编排框架 —— 定义 Agent 怎么干活、干到什么标准、什么时候该停下来让人确认
 
@@ -114,6 +114,27 @@ pip install -e . && python -m charter.cli demo
 
 > v1.0 是"规范"（你读它、按它建团队）；v1.1 是"引擎"（你 `import charter` 直接跑）。
 > v1.0 was the **spec**; v1.1 is the **engine**.
+
+## 一·七、v2.0 生产层 / v2.0 Production Layers
+
+v2.0 补齐同行测评中识别的 4 个生产缺口（Red Hat 2026 "7 missing capabilities" 对齐）：
+
+| 模块 / Module | 能力 / Capability | 解决的缺口 / Gap Closed |
+|------|------|------|
+| `charter/otel_export.py` | OTLP/JSON 导出 + Prometheus 指标 + Grafana 仪表盘模板 | 可观测性 → 生产级（Red Hat #4） |
+| `charter/identity.py` | Agent 加密身份 + HMAC 签名工具调用 + 防重放 + 能力边界 | 加密身份（Red Hat #1，同行最大缺口） |
+| `charter/vector_memory.py` | 哈希嵌入向量记忆 + 语义召回（可插拔 LLM 嵌入后端） | 跨会话 Agent 记忆（全行业标配） |
+| `charter/templates/` | 行业 SOP 模板市场（金融/医疗/电商/研究）+ 自定义发现 | 可复用行业治理基线 |
+
+**新工具 / New tools (20 → 24):**
+- `sign_tool_call` / `verify_tool_call`（加密身份）
+- `vector_recall`（语义记忆召回）
+- `load_template` / `apply_template`（SOP 模板）
+- `export_project(fmt={otlp, prometheus, grafana})`（可观测性导出）
+
+> v2.0 = 引擎 + 生产层。`pip install -e . && python -m charter.cli demo` 现在会连
+> identity / vector / templates / OTel 一起跑通。
+> v2.0 = engine + production layers. The demo now exercises all four new modules.
 
 ## 二、工具定义 / Tool Definitions
 
@@ -837,7 +858,15 @@ v1.0 为首次公开发布版本，包含以下全量能力：
 ---
 
 
-### v2.0 路线图 / v2.0 Roadmap（愿景 / Vision）
+### v2.1 路线图 / v2.1 Roadmap（已实现 4 项，余下为愿景 / 4 done, rest vision）
+
+**v2.0 已实现 / v2.0 Shipped:**
+- ✅ OTel 导出 + Prometheus + Grafana 仪表盘（`charter/otel_export.py`）
+- ✅ Agent 加密身份 + 签名工具调用 + 防重放（`charter/identity.py`）
+- ✅ 向量记忆 + 语义召回（`charter/vector_memory.py`，哈希嵌入，可插拔 LLM）
+- ✅ 行业 SOP 模板市场（`charter/templates/`：finance/healthcare/e-commerce/research）
+
+**v2.1 下一步 / v2.1 Next:**
 
 - **可观测性升级**：`trace_operation` 输出标准 OpenTelemetry，接入 Grafana / Jaeger
 - **加密身份 / Cryptographic Identity**：每个 Agent 签发 X.509 证书，工具调用 mTLS 签名，防重放
