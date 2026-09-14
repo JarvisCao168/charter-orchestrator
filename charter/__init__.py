@@ -1,15 +1,15 @@
 """Charter Orchestrator - executable governance core.
 
-v1.1.0 turned the v1.0 spec into runnable code. v2.0 adds the four
-production layers: OpenTelemetry export + Grafana, agent cryptographic
-identity (signed tool calls), vector memory (semantic recall), and an
-industry SOP template marketplace.
+v1.1.0 turned the v1.0 spec into runnable code. v2.0 added OTel export,
+agent cryptographic identity, vector memory, and an SOP template
+marketplace. v2.1 hardens all four: real Grafana/Prometheus provisioning,
+X.509+mTLS agent certs, LLM-embedding backends, and a template PR review flow.
 
 Quick start:
     from charter import init_project, advance_stage, confirm_gate, query_status
     python -m charter.cli demo
 """
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 from .core import (
     init_project, advance_stage, confirm_gate, query_status,
@@ -36,9 +36,29 @@ from .identity import (
 from .vector_memory import (
     VectorMemory, vector_recall, vector_remember, hash_embed,
 )
+import importlib.util
+HAS_CRYPTO = importlib.util.find_spec("cryptography") is not None
 from .templates import (
     list_templates, load_template, apply_template, BUILTIN_TEMPLATES,
 )
+# --- v2.1 hardening ---
+from .grafana import (
+    prometheus_data_source, tempo_data_source, dashboard_json,
+    prometheus_scrape_config, otlp_exporter_config, live_metrics_demo,
+)
+from .llm_embed import (
+    AgnesEmbedder, OpenAIEmbedder, NullEmbedder, pick_embedder, Embedder,
+)
+from .template_pr import (
+    TemplateMarketplace, TemplatePR, validate_template, render_pr,
+    TemplateSpecError,
+)
+if HAS_CRYPTO:
+    from .x509_identity import (
+        AgentPKI, AgentCert, x509_issue, x509_sign, x509_verify,
+        X509IdentityError,
+    )
+
 
 __all__ = [
     # v1.1 core
@@ -56,4 +76,10 @@ __all__ = [
     "IdentityRegistry", "issue_agent", "sign_tool_call", "verify_tool_call",
     "VectorMemory", "vector_recall", "vector_remember", "hash_embed",
     "list_templates", "load_template", "apply_template", "BUILTIN_TEMPLATES",
+    # v2.1
+    "prometheus_data_source", "tempo_data_source", "dashboard_json",
+    "prometheus_scrape_config", "otlp_exporter_config", "live_metrics_demo",
+    "AgnesEmbedder", "OpenAIEmbedder", "NullEmbedder", "pick_embedder", "Embedder",
+    "TemplateMarketplace", "TemplatePR", "validate_template", "render_pr",
+    "TemplateSpecError",
 ]
