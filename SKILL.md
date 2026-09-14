@@ -903,12 +903,20 @@ v1.0 为首次公开发布版本，包含以下全量能力：
 - ✅ LLM 嵌入生产 endpoint + LRU/磁盘缓存（`charter/embed_cache.py`）
 - ✅ PKI/SPIFFE 身份签发（`charter/spiffe.py`，SVID + URI SAN + 信任域）
 
-**v2.4 候选 / v2.4 Candidates:**
-- 在线 judge 接多模型 + 投票/consensus 评分
-- 跨会话记忆接 LLM 摘要压缩（长对话 → 关键事实）
-- Trace SLO 接真实告警（Prometheus Alertmanager / PagerDuty）
-- SPIFFE 接真实 SPIRE Server（gRPC）替换内置 CA
-- 模板市场 PR 自动 CI 校验 + 社区评分
+**v2.4 已实现 / v2.4 Shipped:**
+- ✅ 多模型 judge 共识评分（`charter/judge_consensus.py`，均值/中位数 + 一致性矩阵 + 置信度，离线 fallback）
+- ✅ 跨会话记忆 LLM 摘要压缩（`charter/memory_compress.py`，episode → 关键事实 + 一句话摘要，LLM/heuristic 可插拔）
+- ✅ Trace SLO 接真实告警（`charter/slo_alerts.py`，Alertmanager / PagerDuty，retry-safe payload）
+- ✅ SPIFFE 接真实 SPIRE Server（`charter/spiffe_grpc.py`，gRPC 通道 + 本地 fallback，调用形态一致）
+- ✅ 模板 PR 自动 CI + 社区评分（`charter/pr_community.py`，spec-integrity gate + helpful/adopted/reported 加权分）
+
+**v2.5 候选 / v2.5 Candidates:**
+- 在线 judge 共识接多 provider 投票 + 加权投票（按历史准确率调权）
+- 记忆压缩接 LLM 长对话 → 分层摘要（episode → session → project）
+- SLO 告警接 Prometheus Alertmanager 规则（PromQL 自动生成）+ 真实 webhook
+- SPIFFE 接 SPIRE gRPC 的 attestation（工作负载密钥持有证明）
+- 社区评分接真实 GitHub PR 评论/反应 + 自动 merge 门槛
+- 跨仓库多 agent checkpoint 共享（团队协作审计）
 
 
 - **可观测性升级**：`trace_operation` 输出标准 OpenTelemetry，接入 Grafana / Jaeger
