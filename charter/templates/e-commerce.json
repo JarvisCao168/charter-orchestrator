@@ -1,0 +1,26 @@
+{
+  "name": "e-commerce",
+  "label": "E-commerce / High-throughput",
+  "stage_gates": {
+    "stage_6": [
+      "tdd_red_green",
+      "worktree_isolated",
+      "code_review_passed",
+      "load_test_passed"
+    ],
+    "stage_8": [
+      "release_checklist",
+      "artifacts_built",
+      "canary_deployment_verified"
+    ]
+  },
+  "tdd_enforcement": "soft",
+  "token_budget": 150000,
+  "guardrail_extra_patterns": [
+    "(?i)price\\s*=\\s*0\\b",
+    "(?i)coupon\\s*unlimited"
+  ],
+  "audit_required_stages": [
+    "stage_8"
+  ]
+}
