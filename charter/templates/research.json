@@ -1,0 +1,19 @@
+{
+  "name": "research",
+  "label": "Research / Experimentation",
+  "stage_gates": {
+    "stage_1": [
+      "problem_statement",
+      "feasibility_score",
+      "hypothesis_stated"
+    ],
+    "stage_7": [
+      "integration_tests_passed",
+      "reproducibility_checked"
+    ]
+  },
+  "tdd_enforcement": "off",
+  "token_budget": 300000,
+  "guardrail_extra_patterns": [],
+  "audit_required_stages": []
+}
