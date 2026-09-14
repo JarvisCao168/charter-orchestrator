@@ -23,5 +23,5 @@ jobs:
         run: python scripts/validate_skills.py
       - name: Run executable tests
         run: python -m pytest tests/
-      - name: Run governed demo
+      - name: run: pip install -e . pytest cryptography
         run: python -m charter.cli demo
