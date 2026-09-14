@@ -9,7 +9,7 @@ Quick start:
     from charter import init_project, advance_stage, confirm_gate, query_status
     python -m charter.cli demo
 """
-__version__ = "2.3.0"
+__version__ = "2.4.0"
 
 from .core import (
     init_project, advance_stage, confirm_gate, query_status,
@@ -84,6 +84,28 @@ from .spiffe import (
     issue_svid, verify_svid, bundle_svid, SPIFFEError,
 )
 
+# --- v2.4 multi-system linkages ---
+from .judge_consensus import (
+    ConsensusJudge, consensus_judge, agreement_matrix,
+)
+from .memory_compress import (
+    HeuristicSummarizer, LLMSummarizer, MemoryCompressor,
+    compress_session, pick_summarizer,
+)
+from .slo_alerts import (
+    AlertPayload, SLOAlertGate, build_alert_payload,
+    fire_alertmanager, fire_pagerduty, fire,
+)
+from .spiffe_grpc import (
+    RemoteSVID, SPIREGateway, connect_spire, fetch_x509_svid,
+    verify_remote_svid,
+)
+from .pr_community import (
+    TemplateCIGate, run_template_ci, ScoredTemplate,
+    community_score, rank_templates, add_feedback,
+    template_pr_with_ci,
+)
+
 
 __all__ = [
     # v1.1 core
@@ -120,4 +142,15 @@ __all__ = [
     "EmbedCache", "CachedEmbedder", "production_embedder", "embed_with_cache",
     "TrustDomain", "SVID", "SVIDBundle", "build_spiffe_id", "parse_spiffe_id",
     "issue_svid", "verify_svid", "bundle_svid", "SPIFFEError",
+    # v2.4
+    "ConsensusJudge", "consensus_judge", "agreement_matrix",
+    "HeuristicSummarizer", "LLMSummarizer", "MemoryCompressor",
+    "compress_session", "pick_summarizer",
+    "AlertPayload", "SLOAlertGate", "build_alert_payload",
+    "fire_alertmanager", "fire_pagerduty", "fire",
+    "RemoteSVID", "SPIREGateway", "connect_spire", "fetch_x509_svid",
+    "verify_remote_svid",
+    "TemplateCIGate", "run_template_ci", "ScoredTemplate",
+    "community_score", "rank_templates", "add_feedback",
+    "template_pr_with_ci",
 ]
