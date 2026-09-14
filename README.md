@@ -540,3 +540,18 @@ v2.0 closes the four production gaps named in the 2026 peer review:
 | **SOP Templates** | `charter/templates/` | finance / healthcare / e-commerce / research governance baselines |
 
 22 automated tests (`python -m pytest tests/`) cover v1.1 + v2.0.
+## v2.2 — Production Linkages
+
+- **Online LLM-as-judge** — `charter/llm_judge_online.py`: real Agnes/OpenAI judge
+  backends over stdlib HTTP; graceful offline fallback when no key / no network
+  (tests stay green in CI). Drop-in for the offline heuristic judge.
+- **Cross-session persistent memory** — `charter/session_store.py`: file-backed
+  SQLite (`~/.charter/sessions.db`), WAL mode, multi-process-safe; semantic
+  recall via pluggable embedder + recency + salience blend; cross-session
+  `query()` surfaces what prior sessions learned.
+- **Full OTel → Jaeger / Tempo link** — `charter/trace_link.py`: retry-safe
+  OTLP/JSON exporters to Jaeger/Tempo, read-back query, per-service SLO digest
+  (p50/p95 latency, error rate, RPS) with boolean SLO-MET/BREACHED verdict.
+
+Install: `pip install charter-orchestrator` (stdlib-only core). Optional extras:
+`[crypto]` (X.509/mTLS), `[llm]` (HTTP embedders + online judge).
