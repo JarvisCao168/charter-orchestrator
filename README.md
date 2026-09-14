@@ -8,7 +8,7 @@
 
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Skill Definition](https://img.shields.io/badge/Skill-v2.0.0-green.svg)](SKILL.md)
+[![Skill Definition](https://img.shields.io/badge/Skill-v2.1.0-green.svg)](SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/Platform-Agent--Independent-brightgreen.svg)](.)
 
@@ -422,9 +422,9 @@ Charter Orchestrator 可与以下主流框架和项目集成：
 
 | 版本 / Version | 状态 / Status | 核心内容 / Core Content |
 |------|------|----------|
-| **v2.0.0** | **当前版本（首版发布）** | 20 工具 · 47 Skills · 13 类治理规则 · 10 阶段 SOP · Checkpoint / 多模型调度 / TDD / Guardrails / 自动驾驶 / 可观测性 |
-| v2.0.0 | 规划 | 社区模板市场、多仓库协作、自定义阶段模板 |
-| v2.0.0 | 愿景 | 自进化治理规则、跨项目知识图谱、AI 驱动的流程优化 |
+| **v2.1.0** | **当前版本（首版发布）** | 20 工具 · 47 Skills · 13 类治理规则 · 10 阶段 SOP · Checkpoint / 多模型调度 / TDD / Guardrails / 自动驾驶 / 可观测性 |
+| v2.1.0 | 规划 | 社区模板市场、多仓库协作、自定义阶段模板 |
+| v2.1.0 | 愿景 | 自进化治理规则、跨项目知识图谱、AI 驱动的流程优化 |
 
 ### 工具总数变化 / Tool Count Evolution
 
