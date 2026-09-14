@@ -897,11 +897,19 @@ v1.0 为首次公开发布版本，包含以下全量能力：
 - ✅ 跨会话持久化记忆（`charter/session_store.py`，SQLite WAL，语义召回，跨进程安全）
 - ✅ OTel → Jaeger/Tempo 完整链路（`charter/trace_link.py`，重试安全导出 + 查询 + SLO 摘要）
 
-**v2.3 候选 / v2.3 Candidates:**
-- 真实 mTLS 双向认证（server 侧证书校验）
-- 模板市场接 GitHub PR（`render_pr` → 自动开 PR）
-- LLM 嵌入接 `AgnesEmbedder` 的生产 endpoint + 缓存
-- 加密身份接 PKI 签发服务（CAs / SPIFFE）
+**v2.3 已实现 / v2.3 Shipped:**
+- ✅ 真实 mTLS 双向认证（`charter/mtls.py`，server 侧证书链校验 + 吊销 + CA 签名）
+- ✅ 模板市场自动开 GitHub PR（`charter/github_pr.py`，离线安全草稿 fallback）
+- ✅ LLM 嵌入生产 endpoint + LRU/磁盘缓存（`charter/embed_cache.py`）
+- ✅ PKI/SPIFFE 身份签发（`charter/spiffe.py`，SVID + URI SAN + 信任域）
+
+**v2.4 候选 / v2.4 Candidates:**
+- 在线 judge 接多模型 + 投票/consensus 评分
+- 跨会话记忆接 LLM 摘要压缩（长对话 → 关键事实）
+- Trace SLO 接真实告警（Prometheus Alertmanager / PagerDuty）
+- SPIFFE 接真实 SPIRE Server（gRPC）替换内置 CA
+- 模板市场 PR 自动 CI 校验 + 社区评分
+
 
 - **可观测性升级**：`trace_operation` 输出标准 OpenTelemetry，接入 Grafana / Jaeger
 - **加密身份 / Cryptographic Identity**：每个 Agent 签发 X.509 证书，工具调用 mTLS 签名，防重放
