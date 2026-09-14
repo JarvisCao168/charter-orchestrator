@@ -88,8 +88,50 @@ def demo() -> int:
           f"status={fx['status']}, uncovered={fx['uncovered']}")
     print(f"   defense utilization={fx['defense_utilization']}")
 
+    # ---- v2.0 layers ----
+    print("\n" + "-" * 64)
+    print("v2.0 layers")
+    print("-" * 64)
+
+    from .identity import IdentityRegistry, issue_agent, sign_tool_call, verify_tool_call
+    from .vector_memory import VectorMemory
+    from .templates import list_templates, apply_template
+    from .otel_export import to_otlp_json, prometheus_text
+
+    # 1) Cryptographic identity: sign a tool call, verify, block replay
+    reg = IdentityRegistry(root_key="demo-root")
+    issue_agent("dev-1", ["execute_in_sandbox", "advance_stage"], registry=reg)
+    call = sign_tool_call("dev-1", "execute_in_sandbox", {"cmd": "pytest"}, registry=reg)
+    v1 = verify_tool_call(call, {"cmd": "pytest"}, registry=reg)
+    v2 = verify_tool_call(call, {"cmd": "pytest"}, registry=reg)  # replay
+    print(f"[identity] first verify={v1['ok']}  replay verify={v2['ok']}"
+          f" (problems={v2['problems']})")
+
+    # 2) Vector memory: semantic recall
+    vm = VectorMemory(path=":memory:", dim=128)
+    vm.remember("dev-1", "we decided SQLite is the cache layer")
+    vm.remember("dev-1", "OAuth2 login flow returns 401 on expired token")
+    hits = vm.recall("dev-1", "cache storage choice", limit=1)
+    print(f"[vector] recall 'cache storage choice' -> "
+          f"'{hits[0]['content']}' (score={hits[0]['score']})")
+
+    # 3) SOP template marketplace: apply a domain template
+    tpl_names = [t["name"] for t in list_templates()]
+    cfg = apply_template({"tdd_enforcement": "soft"}, "finance")
+    print(f"[templates] available={tpl_names}")
+    print(f"[templates] finance override -> tdd={cfg['tdd_enforcement']} "
+          f"budget={cfg['token_budget']}")
+
+    # 4) OTel + Prometheus export from the project trace
+    p = __import__("charter").core._REGISTRY[pid]
+    otlp = to_otlp_json(p.trace.spans)
+    spans = otlp["resourceSpans"][0]["scopeSpans"][0]["spans"]
+    prom = prometheus_text(p.trace.spans, pid)
+    print(f"[otel] {len(spans)} spans exported as OTLP/JSON")
+    print(f"[otel] prometheus sample:\n  {prom.strip().splitlines()[2]}")
+
     print("\n" + "=" * 64)
-    print("DEMO COMPLETE - every gate, TDD, guardrail, checkpoint, eval ran.")
+    print("DEMO COMPLETE - v1.1 governance + v2.0 identity/vector/otel/templates all ran.")
     print("=" * 64)
     return 0
 
