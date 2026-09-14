@@ -592,3 +592,28 @@ Install: `pip install charter-orchestrator` (stdlib-only core). Optional extras:
   `run_template_ci(spec)` runs the host repo's spec-integrity gate on a
   candidate template; `community_score` / `rank_templates` aggregate user
   helpful/adopted/reported signals into a weighted per-template score.
+## v2.5 — Multi-System Linkages (Phase 2)
+
+- **Multi-provider judge weighted voting** — `charter/judge_voting.py`:
+  aggregate N provider judges with per-provider weights (default equal, or
+  `accuracy_weights` from a labeled gold set); weighted mean per-dim +
+  weighted majority verdict + effective agreement.
+- **Hierarchical memory compression** — `charter/memory_hierarchy.py`:
+  episode → session → project, three tiers; `compress_project` rolls session
+  summaries into a rolling project digest, `recall_project` surfaces the
+  right tier for a query.
+- **Prometheus/Alertmanager rule auto-generation** —
+  `charter/prometheus_rules.py`: emits a `rules.yaml` (SLO-aware error-rate,
+  tool-burst, low-uptime expressions) + an Alertmanager provisioning
+  skeleton (route + inhibit + receivers) ready to drop into Grafana.
+- **SPIRE gRPC workload attestation** — `charter/spiffe_attestation.py`:
+  build attestation requests (k8s_pod / workload_jwt / opaque), attest to a
+  live SPIRE Server or fall back to the local issuer, verify the SVID.
+- **Real GitHub PR comment scoring** — `charter/pr_comment_scoring.py`:
+  fetch a PR's reviews/comments/reactions, fold into the community score,
+  and an `auto_merge_gate` (conservative: requires live signals + min
+  reviews).
+- **Cross-repo multi-agent checkpoint sharing** —
+  `charter/cross_repo.py`: a file-backed `~/.charter/checkpoints/` exchange;
+  `publish_checkpoint` / `pull_checkpoint` / `list_published` /
+  `import_into_core` so agents in different repos share governance state.
