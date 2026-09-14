@@ -1,9 +1,9 @@
 # Charter Orchestrator — Skill Definition
 
 > **Skill 名称**：Charter Orchestrator
-> **Version**: 2.0.0
+> **Version**: 2.1.0
 > **Charter / 章程**: 智能体团队协作章程（终极完整版）
-> **Release / 发布**: 2026-09-14 v1.0.0 · 2026-09-15 v1.1.0 · 2026-09-15 v2.0.0 (production layers)
+> **Release / 发布**: 2026-09-14 v1.0.0 · 2026-09-15 v1.1.0 · 2026-09-15 v2.0.0 · 2026-09-15 v2.1.0 (hardened production)
 > **许可证**：MIT
 > **定位**：Agent之上的全链路治理与编排框架 —— 定义 Agent 怎么干活、干到什么标准、什么时候该停下来让人确认
 
@@ -135,6 +135,26 @@ v2.0 补齐同行测评中识别的 4 个生产缺口（Red Hat 2026 "7 missing 
 > v2.0 = 引擎 + 生产层。`pip install -e . && python -m charter.cli demo` 现在会连
 > identity / vector / templates / OTel 一起跑通。
 > v2.0 = engine + production layers. The demo now exercises all four new modules.
+
+## 一·八、v2.1 强化 / v2.1 Hardening
+
+v2.1 把 v2.0 的 4 个生产层从"能跑"升级到"生产级"：
+
+| 升级项 / Upgrade | 模块 / Module | 说明 / Notes |
+|------|------|------|
+| **X.509 + mTLS 身份** | `charter/x509_identity.py` | 真实 X.509 Agent 证书（EC P-256 + CA 签发），ECDSA 签名工具调用，替换 v2.0 的 HMAC 方案；无 `cryptography` 时自动回退 HMAC |
+| **真实 Grafana 数据源** | `charter/grafana.py` | Prometheus/Tempo 数据源 provisioning + 完整 dashboard + scrape 配置 + OTLP 导出器配置，可直接导入 Grafana |
+| **LLM 嵌入后端** | `charter/llm_embed.py` | `AgnesEmbedder`/`OpenAIEmbedder` 接入 `VectorMemory(embed=...)`，语义召回从哈希嵌入升级为真实模型嵌入 |
+| **模板市场 PR 流程** | `charter/template_pr.py` | `TemplateMarketplace` + `validate_template` + `render_pr`：行业模板走"提交 → 校验 → 审批 → 合并"治理流 |
+
+**新增导出 / New exports**（`import charter` 可直接用）：
+- `x509_issue / x509_sign / x509_verify`（X.509 Agent 身份，需 `pip install charter-orchestrator[crypto]`）
+- `prometheus_data_source / tempo_data_source / dashboard_json / prometheus_scrape_config / live_metrics_demo`
+- `AgnesEmbedder / OpenAIEmbedder / NullEmbedder / pick_embedder`
+- `TemplateMarketplace / validate_template / render_pr`
+
+> v2.1 = 生产加固。demo 现在连 X.509 签名调用 + Grafana provisioning + LLM 嵌入后端一起跑通。
+> v2.1 = production hardening. The demo now exercises X.509 signed calls + Grafana provisioning + LLM embedder.
 
 ## 二、工具定义 / Tool Definitions
 
@@ -858,7 +878,7 @@ v1.0 为首次公开发布版本，包含以下全量能力：
 ---
 
 
-### v2.1 路线图 / v2.1 Roadmap（已实现 4 项，余下为愿景 / 4 done, rest vision）
+### v2.2 路线图 / v2.2 Roadmap（v2.1 已实现 4 项强化）
 
 **v2.0 已实现 / v2.0 Shipped:**
 - ✅ OTel 导出 + Prometheus + Grafana 仪表盘（`charter/otel_export.py`）
@@ -866,7 +886,17 @@ v1.0 为首次公开发布版本，包含以下全量能力：
 - ✅ 向量记忆 + 语义召回（`charter/vector_memory.py`，哈希嵌入，可插拔 LLM）
 - ✅ 行业 SOP 模板市场（`charter/templates/`：finance/healthcare/e-commerce/research）
 
-**v2.1 下一步 / v2.1 Next:**
+**v2.1 已实现 / v2.1 Shipped:**
+- ✅ X.509 Agent 证书 + ECDSA 签名工具调用（`charter/x509_identity.py`，可选 crypto extra）
+- ✅ 真实 Grafana 数据源 provisioning（`charter/grafana.py`）
+- ✅ LLM 嵌入后端 Agnes/OpenAI（`charter/llm_embed.py`，接入 VectorMemory）
+- ✅ 行业模板 PR 治理流（`charter/template_pr.py`）
+
+**v2.2 下一步 / v2.2 Next:**
+- 真实 mTLS 双向认证（server 侧证书校验）
+- 模板市场接 GitHub PR（`render_pr` → 自动开 PR）
+- LLM 嵌入接 `AgnesEmbedder` 的生产 endpoint + 缓存
+- 加密身份接 PKI 签发服务（CAs / SPIFFE）
 
 - **可观测性升级**：`trace_operation` 输出标准 OpenTelemetry，接入 Grafana / Jaeger
 - **加密身份 / Cryptographic Identity**：每个 Agent 签发 X.509 证书，工具调用 mTLS 签名，防重放
