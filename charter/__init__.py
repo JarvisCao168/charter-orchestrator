@@ -9,7 +9,7 @@ Quick start:
     from charter import init_project, advance_stage, confirm_gate, query_status
     python -m charter.cli demo
 """
-__version__ = "2.4.0"
+__version__ = "2.5.0"
 
 from .core import (
     init_project, advance_stage, confirm_gate, query_status,
@@ -106,6 +106,29 @@ from .pr_community import (
     template_pr_with_ci,
 )
 
+# --- v2.5 multi-system linkages (phase 2) ---
+from .judge_voting import (
+    ProviderVote, WeightedVotingJudge, vote_judges, accuracy_weights,
+)
+from .memory_hierarchy import (
+    TierSummary, MemoryHierarchy, compress_project, recall_project,
+)
+from .prometheus_rules import (
+    alert_rules, alertmanager_provisioning, render_provisioning_bundle,
+)
+from .spiffe_attestation import (
+    AttestationRequest, AttestResult, build_attestation_request,
+    spire_attest, verify_attestation, ATTEST_TYPES,
+)
+from .pr_comment_scoring import (
+    PRSignals, fetch_pr_signals, score_from_pr, auto_merge_gate,
+)
+from .cross_repo import (
+    CheckpointBus, PublishedCheckpoint,
+    publish_checkpoint, pull_checkpoint, list_published,
+    import_into_core,
+)
+
 
 __all__ = [
     # v1.1 core
@@ -153,4 +176,13 @@ __all__ = [
     "TemplateCIGate", "run_template_ci", "ScoredTemplate",
     "community_score", "rank_templates", "add_feedback",
     "template_pr_with_ci",
+    # v2.5
+    "ProviderVote", "WeightedVotingJudge", "vote_judges", "accuracy_weights",
+    "TierSummary", "MemoryHierarchy", "compress_project", "recall_project",
+    "alert_rules", "alertmanager_provisioning", "render_provisioning_bundle",
+    "AttestationRequest", "AttestResult", "build_attestation_request",
+    "spire_attest", "verify_attestation", "ATTEST_TYPES",
+    "PRSignals", "fetch_pr_signals", "score_from_pr", "auto_merge_gate",
+    "CheckpointBus", "PublishedCheckpoint", "publish_checkpoint",
+    "pull_checkpoint", "list_published", "import_into_core",
 ]
