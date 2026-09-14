@@ -130,8 +130,48 @@ def demo() -> int:
     print(f"[otel] {len(spans)} spans exported as OTLP/JSON")
     print(f"[otel] prometheus sample:\n  {prom.strip().splitlines()[2]}")
 
+    # ---- v2.1 hardening ----
+    print("\n" + "-" * 64)
+    print("v2.1 hardening")
+    print("-" * 64)
+
+    from charter.grafana import live_metrics_demo, dashboard_json
+    from charter.template_pr import TemplateMarketplace, validate_template, render_pr
+
+    # 1) Real Grafana provisioning bundle
+    bundle = live_metrics_demo()
+    print(f"[grafana] data sources: {bundle['prometheus_ds']['datasources'][0]['type']}, "
+          f"{bundle['tempo_ds']['datasources'][0]['type']} | "
+          f"dashboard panels: {len(bundle['dashboard']['panels'])}")
+
+    # 2) X.509 signed tool call (if cryptography available)
+    import importlib.util
+    if importlib.util.find_spec("cryptography"):
+        from charter import x509_issue, x509_sign, x509_verify
+        x509_issue("dev-1", ["execute_in_sandbox"])
+        call = x509_sign("dev-1", "execute_in_sandbox", {"cmd": "pytest"})
+        ok = x509_verify(call, {"cmd": "pytest"})
+        print(f"[x509] signed call verify={ok['ok']} agent={ok.get('agent')}")
+    else:
+        print("[x509] cryptography not installed -> HMAC fallback (charter.identity) in use")
+
+    # 3) Template PR governance: validate + render
+    spec = {"name": "logistics", "label": "Logistics / Supply Chain",
+            "stage_gates": {"stage_8": ["release_checklist", "logistics_audit"]},
+            "tdd_enforcement": "soft", "token_budget": 90000,
+            "guardrail_extra_patterns": [r"(?i)dangerous"],
+            "audit_required_stages": ["stage_8"]}
+    probs = validate_template(spec)
+    print(f"[template-pr] validate '{spec['name']}' -> problems={probs}")
+    m = TemplateMarketplace()
+    pr = m.propose(spec, author="community")
+    m.approve(pr.pr_id, "reviewer-1")
+    merged = m.merge(pr.pr_id)
+    print(f"[template-pr] merged '{merged}' (now loadable)")
+
     print("\n" + "=" * 64)
-    print("DEMO COMPLETE - v1.1 governance + v2.0 identity/vector/otel/templates all ran.")
+    print("DEMO COMPLETE - v1.1 + v2.0 + v2.1 all layers ran "
+          "(governance, OTel, identity, vector, templates, X.509, Grafana).")
     print("=" * 64)
     return 0
 
