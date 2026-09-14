@@ -1,801 +1,829 @@
 {
-  "env_01": {
-    "name": "EnvironmentProbe",
-    "category": "env",
-    "tools": [
-      "init_project",
-      "query_status"
-    ],
-    "path": "skills/env/env_01/SKILL.md",
-    "inputs": [
-      "project_id"
-    ],
-    "outputs": [
-      "env_report",
-      "capability_matrix"
-    ]
-  },
-  "env_02": {
-    "name": "SandboxProvisioner",
-    "category": "env",
-    "tools": [
-      "init_project",
-      "execute_in_sandbox"
-    ],
-    "path": "skills/env/env_02/SKILL.md",
-    "inputs": [
-      "project_id",
-      "sandbox_type"
-    ],
-    "outputs": [
-      "sandbox_id",
-      "isolation_level"
-    ]
-  },
-  "env_03": {
-    "name": "ModelRegistryProbe",
-    "category": "env",
-    "tools": [
-      "dispatch_to_model",
-      "query_rule"
-    ],
-    "path": "skills/env/env_03/SKILL.md",
-    "inputs": [
-      "task_type",
-      "complexity"
-    ],
-    "outputs": [
-      "available_runtimes",
-      "health_status"
-    ]
-  },
-  "env_04": {
-    "name": "GuardrailsBaseline",
-    "category": "env",
-    "tools": [
-      "guardrails",
-      "init_project"
-    ],
-    "path": "skills/env/env_04/SKILL.md",
-    "inputs": [
-      "project_id",
-      "rule_set"
-    ],
-    "outputs": [
-      "baseline_config",
-      "violation_policy"
-    ]
-  },
-  "env_05": {
-    "name": "WorktreeProvisioner",
-    "category": "env",
-    "tools": [
-      "manage_worktree",
-      "init_project"
-    ],
-    "path": "skills/env/env_05/SKILL.md",
-    "inputs": [
-      "project_id",
-      "base_branch"
-    ],
-    "outputs": [
-      "worktree_path",
-      "branch_name"
-    ]
-  },
-  "env_06": {
-    "name": "TDDSetup",
-    "category": "env",
-    "tools": [
-      "enforce_tdd",
-      "manage_worktree"
-    ],
-    "path": "skills/env/env_06/SKILL.md",
-    "inputs": [
-      "module_path",
-      "test_framework"
-    ],
-    "outputs": [
-      "tdd_configured",
-      "test_dirs"
-    ]
-  },
-  "env_07": {
-    "name": "DependencyManager",
-    "category": "env",
-    "tools": [
-      "execute_in_sandbox",
-      "query_status"
-    ],
-    "path": "skills/env/env_07/SKILL.md",
-    "inputs": [
-      "dependency_manifest",
-      "version_constraints"
-    ],
-    "outputs": [
-      "locked_versions",
-      "conflicts"
-    ]
-  },
-  "analysis_01": {
-    "name": "CompetitorAnalyzer",
-    "category": "analysis",
-    "tools": [
-      "query_status",
-      "create_dropbox"
-    ],
-    "path": "skills/analysis/analysis_01/SKILL.md",
-    "inputs": [
-      "target_domain",
-      "competitor_list"
-    ],
-    "outputs": [
-      "feature_matrix",
-      "architecture_notes"
-    ]
-  },
-  "analysis_02": {
-    "name": "FeasibilityAssessor",
-    "category": "analysis",
-    "tools": [
-      "query_rule",
-      "save_checkpoint"
-    ],
-    "path": "skills/analysis/analysis_02/SKILL.md",
-    "inputs": [
-      "requirement_spec",
-      "constraints"
-    ],
-    "outputs": [
-      "feasibility_score",
-      "risk_flags"
-    ]
-  },
-  "analysis_03": {
-    "name": "RiskAssessor",
-    "category": "analysis",
-    "tools": [
-      "query_rule",
-      "save_checkpoint"
-    ],
-    "path": "skills/analysis/analysis_03/SKILL.md",
-    "inputs": [
-      "project_scope",
-      "threat_model"
-    ],
-    "outputs": [
-      "risk_register",
-      "mitigations"
-    ]
-  },
-  "analysis_04": {
-    "name": "DistillationDecider",
-    "category": "analysis",
-    "tools": [
-      "query_rule",
-      "dispatch_to_model"
-    ],
-    "path": "skills/analysis/analysis_04/SKILL.md",
-    "inputs": [
-      "component_candidates",
-      "license"
-    ],
-    "outputs": [
-      "distillation_decision",
-      "compliance_report"
-    ]
-  },
-  "analysis_05": {
-    "name": "ArchitectureReviewer",
-    "category": "analysis",
-    "tools": [
-      "guardrails",
-      "query_rule"
-    ],
-    "path": "skills/analysis/analysis_05/SKILL.md",
-    "inputs": [
-      "architecture_doc",
-      "design_decisions"
-    ],
-    "outputs": [
-      "review_verdict",
-      "tech_debt_flags"
-    ]
-  },
-  "analysis_06": {
-    "name": "CostOptimizer",
-    "category": "analysis",
-    "tools": [
-      "dispatch_to_model",
-      "query_status"
-    ],
-    "path": "skills/analysis/analysis_06/SKILL.md",
-    "inputs": [
-      "task_profile",
-      "budget_tier"
-    ],
-    "outputs": [
-      "cost_estimate",
-      "recommended_model"
-    ]
-  },
-  "dev_01": {
-    "name": "CodeGenerator",
-    "category": "dev",
-    "tools": [
-      "execute_in_sandbox",
-      "manage_worktree",
-      "enforce_tdd"
-    ],
-    "path": "skills/dev/dev_01/SKILL.md",
-    "inputs": [
-      "module_spec",
-      "design_doc"
-    ],
-    "outputs": [
-      "generated_code",
-      "test_stub"
-    ]
-  },
-  "dev_02": {
-    "name": "APIDesignPro",
-    "category": "dev",
-    "tools": [
-      "execute_in_sandbox",
-      "guardrails"
-    ],
-    "path": "skills/dev/dev_02/SKILL.md",
-    "inputs": [
-      "api_endpoints",
-      "data_model"
-    ],
-    "outputs": [
-      "api_review",
-      "optimization_hints"
-    ]
-  },
-  "dev_03": {
-    "name": "FrontendEngineer",
-    "category": "dev",
-    "tools": [
-      "execute_in_sandbox",
-      "guardrails"
-    ],
-    "path": "skills/dev/dev_03/SKILL.md",
-    "inputs": [
-      "component_tree",
-      "perf_budget"
-    ],
-    "outputs": [
-      "frontend_code",
-      "perf_report"
-    ]
-  },
-  "dev_04": {
-    "name": "DatabaseArchitect",
-    "category": "dev",
-    "tools": [
-      "execute_in_sandbox",
-      "query_status"
-    ],
-    "path": "skills/dev/dev_04/SKILL.md",
-    "inputs": [
-      "schema_draft",
-      "query_workload"
-    ],
-    "outputs": [
-      "optimized_schema",
-      "index_plan"
-    ]
-  },
-  "dev_05": {
-    "name": "CodeReviewer",
-    "category": "dev",
-    "tools": [
-      "guardrails",
-      "query_rule"
-    ],
-    "path": "skills/dev/dev_05/SKILL.md",
-    "inputs": [
-      "diff_patch",
-      "review_checklist"
-    ],
-    "outputs": [
-      "review_comments",
-      "approve_reject"
-    ]
-  },
-  "dev_06": {
-    "name": "SecurityAuditor",
-    "category": "dev",
-    "tools": [
-      "guardrails",
-      "execute_in_sandbox"
-    ],
-    "path": "skills/dev/dev_06/SKILL.md",
-    "inputs": [
-      "code_base",
-      "dependency_list"
-    ],
-    "outputs": [
-      "vulnerabilities",
-      "security_score"
-    ]
-  },
-  "dev_07": {
-    "name": "PerformanceEngineer",
-    "category": "dev",
-    "tools": [
-      "execute_in_sandbox",
-      "query_status"
-    ],
-    "path": "skills/dev/dev_07/SKILL.md",
-    "inputs": [
-      "benchmark_suite",
-      "baseline"
-    ],
-    "outputs": [
-      "perf_metrics",
-      "bottlenecks"
-    ]
-  },
-  "dev_08": {
-    "name": "TDDEnforcer",
-    "category": "dev",
-    "tools": [
-      "enforce_tdd",
-      "manage_worktree"
-    ],
-    "path": "skills/dev/dev_08/SKILL.md",
-    "inputs": [
-      "module_path",
-      "test_scope"
-    ],
-    "outputs": [
-      "tdd_status",
-      "coverage"
-    ]
-  },
-  "dev_09": {
-    "name": "TechDebtTracker",
-    "category": "dev",
-    "tools": [
-      "query_status",
-      "create_dropbox"
-    ],
-    "path": "skills/dev/dev_09/SKILL.md",
-    "inputs": [
-      "code_module",
-      "debt_threshold"
-    ],
-    "outputs": [
-      "debt_items",
-      "priority"
-    ]
-  },
-  "dev_10": {
-    "name": "RefactoringAssistant",
-    "category": "dev",
-    "tools": [
-      "execute_in_sandbox",
-      "enforce_tdd"
-    ],
-    "path": "skills/dev/dev_10/SKILL.md",
-    "inputs": [
-      "target_code",
-      "refactor_intent"
-    ],
-    "outputs": [
-      "refactored_code",
-      "risk_assessment"
-    ]
-  },
-  "dev_11": {
-    "name": "SBOMGenerator",
-    "category": "dev",
-    "tools": [
-      "execute_in_sandbox",
-      "query_status"
-    ],
-    "path": "skills/dev/dev_11/SKILL.md",
-    "inputs": [
-      "build_output",
-      "dependencies"
-    ],
-    "outputs": [
-      "sbom_json",
-      "license_inventory"
-    ]
-  },
-  "dev_12": {
-    "name": "BuildPipeline",
-    "category": "dev",
-    "tools": [
-      "trigger_workflow",
-      "execute_in_sandbox"
-    ],
-    "path": "skills/dev/dev_12/SKILL.md",
-    "inputs": [
-      "pipeline_spec",
-      "triggers"
-    ],
-    "outputs": [
-      "pipeline_config",
-      "ci_status"
-    ]
-  },
-  "test_01": {
-    "name": "TestPlanner",
-    "category": "test",
-    "tools": [
-      "query_rule",
-      "save_checkpoint"
-    ],
-    "path": "skills/test/test_01/SKILL.md",
-    "inputs": [
-      "feature_spec",
-      "coverage_target"
-    ],
-    "outputs": [
-      "test_plan",
-      "test_cases"
-    ]
-  },
-  "test_02": {
-    "name": "TestExecutor",
-    "category": "test",
-    "tools": [
-      "execute_in_sandbox",
-      "query_status"
-    ],
-    "path": "skills/test/test_02/SKILL.md",
-    "inputs": [
-      "test_suite",
-      "env"
-    ],
-    "outputs": [
-      "results",
-      "failures"
-    ]
-  },
-  "test_03": {
-    "name": "PerformanceBaseline",
-    "category": "test",
-    "tools": [
-      "execute_in_sandbox",
-      "query_status"
-    ],
-    "path": "skills/test/test_03/SKILL.md",
-    "inputs": [
-      "perf_scenario",
-      "threshold"
-    ],
-    "outputs": [
-      "baseline",
-      "regression_flags"
-    ]
-  },
-  "test_04": {
-    "name": "SecurityTest",
-    "category": "test",
-    "tools": [
-      "guardrails",
-      "execute_in_sandbox"
-    ],
-    "path": "skills/test/test_04/SKILL.md",
-    "inputs": [
-      "attack_surface",
-      "compliance_std"
-    ],
-    "outputs": [
-      "findings",
-      "pen_results"
-    ]
-  },
-  "test_05": {
-    "name": "AcceptanceValidator",
-    "category": "test",
-    "tools": [
-      "confirm_gate",
-      "query_rule"
-    ],
-    "path": "skills/test/test_05/SKILL.md",
-    "inputs": [
-      "acceptance_criteria",
-      "test_evidence"
-    ],
-    "outputs": [
-      "acceptance_verdict",
-      "signoff"
-    ]
-  },
-  "deploy_01": {
-    "name": "ReleaseManager",
-    "category": "deploy",
-    "tools": [
-      "execute_in_sandbox",
-      "trigger_workflow"
-    ],
-    "path": "skills/deploy/deploy_01/SKILL.md",
-    "inputs": [
-      "version",
-      "release_notes"
-    ],
-    "outputs": [
-      "release_artifact",
-      "version_tag"
-    ]
-  },
-  "deploy_02": {
-    "name": "SecurityAuditFinal",
-    "category": "deploy",
-    "tools": [
-      "guardrails",
-      "query_status"
-    ],
-    "path": "skills/deploy/deploy_02/SKILL.md",
-    "inputs": [
-      "release_candidate",
-      "audit_scope"
-    ],
-    "outputs": [
-      "final_audit",
-      "blockers"
-    ]
-  },
-  "deploy_03": {
-    "name": "DeploymentOrchestrator",
-    "category": "deploy",
-    "tools": [
-      "trigger_workflow",
-      "query_status"
-    ],
-    "path": "skills/deploy/deploy_03/SKILL.md",
-    "inputs": [
-      "deploy_targets",
-      "strategy"
-    ],
-    "outputs": [
-      "deploy_report",
-      "health_check"
-    ]
-  },
-  "deploy_04": {
-    "name": "RollbackManager",
-    "category": "deploy",
-    "tools": [
-      "restore_checkpoint",
-      "manage_worktree"
-    ],
-    "path": "skills/deploy/deploy_04/SKILL.md",
-    "inputs": [
-      "rollback_trigger",
-      "last_good"
-    ],
-    "outputs": [
-      "rollback_verdict",
-      "restored_state"
-    ]
-  },
-  "collab_01": {
-    "name": "DropBoxManager",
-    "category": "collab",
-    "tools": [
-      "create_dropbox",
-      "query_status"
-    ],
-    "path": "skills/collab/collab_01/SKILL.md",
-    "inputs": [
-      "doc_type",
-      "participants"
-    ],
-    "outputs": [
-      "dropbox_id",
-      "shared_context"
-    ]
-  },
-  "collab_02": {
-    "name": "TaskChainOrchestrator",
-    "category": "collab",
-    "tools": [
-      "create_chat_chain",
-      "manage_task_lifecycle"
-    ],
-    "path": "skills/collab/collab_02/SKILL.md",
-    "inputs": [
-      "objective",
-      "task_graph"
-    ],
-    "outputs": [
-      "chain_status",
-      "blockers"
-    ]
-  },
-  "collab_03": {
-    "name": "MeetingRecorder",
-    "category": "collab",
-    "tools": [
-      "create_dropbox",
-      "create_chat_chain"
-    ],
-    "path": "skills/collab/collab_03/SKILL.md",
-    "inputs": [
-      "meeting_type",
-      "attendees"
-    ],
-    "outputs": [
-      "minutes",
-      "decision_log"
-    ]
-  },
-  "collab_04": {
-    "name": "KnowledgeGraph",
-    "category": "collab",
-    "tools": [
-      "query_status",
-      "create_dropbox"
-    ],
-    "path": "skills/collab/collab_04/SKILL.md",
-    "inputs": [
-      "project_entities",
-      "relations"
-    ],
-    "outputs": [
-      "knowledge_graph",
-      "query_index"
-    ]
-  },
-  "tool_01": {
-    "name": "GitWorkflow",
-    "category": "tool",
-    "tools": [
-      "manage_worktree",
-      "execute_in_sandbox"
-    ],
-    "path": "skills/tool/tool_01/SKILL.md",
-    "inputs": [
-      "branch_strategy",
-      "repo"
-    ],
-    "outputs": [
-      "branch_map",
-      "workflow_rules"
-    ]
-  },
-  "tool_02": {
-    "name": "CI_CDPipeline",
-    "category": "tool",
-    "tools": [
-      "trigger_workflow",
-      "execute_in_sandbox"
-    ],
-    "path": "skills/tool/tool_02/SKILL.md",
-    "inputs": [
-      "ci_stages",
-      "cd_policy"
-    ],
-    "outputs": [
-      "pipeline",
-      "deploy_hooks"
-    ]
-  },
-  "tool_03": {
-    "name": "VersionManager",
-    "category": "tool",
-    "tools": [
-      "query_status",
-      "manage_task_lifecycle"
-    ],
-    "path": "skills/tool/tool_03/SKILL.md",
-    "inputs": [
-      "semver_policy",
-      "changelog"
-    ],
-    "outputs": [
-      "version_matrix",
-      "migration_notes"
-    ]
-  },
-  "tool_04": {
-    "name": "ConfigManager",
-    "category": "tool",
-    "tools": [
-      "init_project",
-      "query_rule"
-    ],
-    "path": "skills/tool/tool_04/SKILL.md",
-    "inputs": [
-      "env_profiles",
-      "config_schema"
-    ],
-    "outputs": [
-      "config_state",
-      "env_switch"
-    ]
-  },
-  "security_01": {
-    "name": "GuardrailsEngine",
-    "category": "security",
-    "tools": [
-      "guardrails",
-      "query_rule"
-    ],
-    "path": "skills/security/security_01/SKILL.md",
-    "inputs": [
-      "direction",
-      "rule_set"
-    ],
-    "outputs": [
-      "guard_result",
-      "violations"
-    ]
-  },
-  "security_02": {
-    "name": "AuditLogger",
-    "category": "security",
-    "tools": [
-      "trace_operation",
-      "query_trace"
-    ],
-    "path": "skills/security/security_02/SKILL.md",
-    "inputs": [
-      "event_stream",
-      "retention"
-    ],
-    "outputs": [
-      "audit_log",
-      "tamper_check"
-    ]
-  },
-  "security_03": {
-    "name": "ComplianceChecker",
-    "category": "security",
-    "tools": [
-      "guardrails",
-      "query_rule"
-    ],
-    "path": "skills/security/security_03/SKILL.md",
-    "inputs": [
-      "compliance_framework",
-      "report_type"
-    ],
-    "outputs": [
-      "compliance_report",
-      "exceptions"
-    ]
-  },
-  "obs_01": {
-    "name": "TraceCollector",
-    "category": "obs",
-    "tools": [
-      "trace_operation",
-      "query_trace"
-    ],
-    "path": "skills/obs/obs_01/SKILL.md",
-    "inputs": [
-      "span_root",
-      "sampling"
-    ],
-    "outputs": [
-      "trace_tree",
-      "metrics"
-    ]
-  },
-  "obs_02": {
-    "name": "ObservabilityReport",
-    "category": "obs",
-    "tools": [
-      "query_trace",
-      "query_status"
-    ],
-    "path": "skills/obs/obs_02/SKILL.md",
-    "inputs": [
-      "time_range",
-      "kpi_set"
-    ],
-    "outputs": [
-      "observability_report",
-      "anomalies"
-    ]
+  "version": "1.1.0",
+  "framework": "Charter Orchestrator",
+  "tools": [
+    "init_project",
+    "advance_stage",
+    "confirm_gate",
+    "query_status",
+    "query_rule",
+    "list_skills",
+    "execute_in_sandbox",
+    "create_dropbox",
+    "manage_task_lifecycle",
+    "trigger_workflow",
+    "create_chat_chain",
+    "save_checkpoint",
+    "restore_checkpoint",
+    "dispatch_to_model",
+    "manage_worktree",
+    "enforce_tdd",
+    "guardrails",
+    "enable_autonomous_mode",
+    "trace_operation",
+    "query_trace"
+  ],
+  "skill_count": 47,
+  "tools_count": 20,
+  "skills": {
+    "env_01": {
+      "name": "EnvironmentProbe",
+      "category": "env",
+      "tools": [
+        "init_project",
+        "query_status"
+      ],
+      "path": "skills/env/env_01/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "env_report",
+        "capability_matrix"
+      ]
+    },
+    "env_02": {
+      "name": "SandboxProvisioner",
+      "category": "env",
+      "tools": [
+        "init_project",
+        "execute_in_sandbox"
+      ],
+      "path": "skills/env/env_02/SKILL.md",
+      "inputs": [
+        "project_id",
+        "sandbox_type"
+      ],
+      "outputs": [
+        "sandbox_id",
+        "isolation_level"
+      ]
+    },
+    "env_03": {
+      "name": "ModelRegistryProbe",
+      "category": "env",
+      "tools": [
+        "dispatch_to_model",
+        "query_rule"
+      ],
+      "path": "skills/env/env_03/SKILL.md",
+      "inputs": [
+        "task_type",
+        "complexity"
+      ],
+      "outputs": [
+        "available_runtimes",
+        "health_status"
+      ]
+    },
+    "env_04": {
+      "name": "GuardrailsBaseline",
+      "category": "env",
+      "tools": [
+        "guardrails",
+        "init_project"
+      ],
+      "path": "skills/env/env_04/SKILL.md",
+      "inputs": [
+        "project_id",
+        "rule_set"
+      ],
+      "outputs": [
+        "baseline_config",
+        "violation_policy"
+      ]
+    },
+    "env_05": {
+      "name": "WorktreeProvisioner",
+      "category": "env",
+      "tools": [
+        "manage_worktree",
+        "init_project"
+      ],
+      "path": "skills/env/env_05/SKILL.md",
+      "inputs": [
+        "project_id",
+        "base_branch"
+      ],
+      "outputs": [
+        "worktree_path",
+        "branch_name"
+      ]
+    },
+    "env_06": {
+      "name": "TDDSetup",
+      "category": "env",
+      "tools": [
+        "enforce_tdd",
+        "manage_worktree"
+      ],
+      "path": "skills/env/env_06/SKILL.md",
+      "inputs": [
+        "module_path",
+        "test_framework"
+      ],
+      "outputs": [
+        "tdd_configured",
+        "test_dirs"
+      ]
+    },
+    "env_07": {
+      "name": "DependencyManager",
+      "category": "env",
+      "tools": [
+        "execute_in_sandbox",
+        "query_status"
+      ],
+      "path": "skills/env/env_07/SKILL.md",
+      "inputs": [
+        "dependency_manifest",
+        "version_constraints"
+      ],
+      "outputs": [
+        "locked_versions",
+        "conflicts"
+      ]
+    },
+    "analysis_01": {
+      "name": "CompetitorAnalyzer",
+      "category": "analysis",
+      "tools": [
+        "query_status",
+        "create_dropbox"
+      ],
+      "path": "skills/analysis/analysis_01/SKILL.md",
+      "inputs": [
+        "target_domain",
+        "competitor_list"
+      ],
+      "outputs": [
+        "feature_matrix",
+        "architecture_notes"
+      ]
+    },
+    "analysis_02": {
+      "name": "FeasibilityAssessor",
+      "category": "analysis",
+      "tools": [
+        "query_rule",
+        "save_checkpoint"
+      ],
+      "path": "skills/analysis/analysis_02/SKILL.md",
+      "inputs": [
+        "requirement_spec",
+        "constraints"
+      ],
+      "outputs": [
+        "feasibility_score",
+        "risk_flags"
+      ]
+    },
+    "analysis_03": {
+      "name": "RiskAssessor",
+      "category": "analysis",
+      "tools": [
+        "query_rule",
+        "save_checkpoint"
+      ],
+      "path": "skills/analysis/analysis_03/SKILL.md",
+      "inputs": [
+        "project_scope",
+        "threat_model"
+      ],
+      "outputs": [
+        "risk_register",
+        "mitigations"
+      ]
+    },
+    "analysis_04": {
+      "name": "DistillationDecider",
+      "category": "analysis",
+      "tools": [
+        "query_rule",
+        "dispatch_to_model"
+      ],
+      "path": "skills/analysis/analysis_04/SKILL.md",
+      "inputs": [
+        "component_candidates",
+        "license"
+      ],
+      "outputs": [
+        "distillation_decision",
+        "compliance_report"
+      ]
+    },
+    "analysis_05": {
+      "name": "ArchitectureReviewer",
+      "category": "analysis",
+      "tools": [
+        "guardrails",
+        "query_rule"
+      ],
+      "path": "skills/analysis/analysis_05/SKILL.md",
+      "inputs": [
+        "architecture_doc",
+        "design_decisions"
+      ],
+      "outputs": [
+        "review_verdict",
+        "tech_debt_flags"
+      ]
+    },
+    "analysis_06": {
+      "name": "CostOptimizer",
+      "category": "analysis",
+      "tools": [
+        "dispatch_to_model",
+        "query_status"
+      ],
+      "path": "skills/analysis/analysis_06/SKILL.md",
+      "inputs": [
+        "task_profile",
+        "budget_tier"
+      ],
+      "outputs": [
+        "cost_estimate",
+        "recommended_model"
+      ]
+    },
+    "dev_01": {
+      "name": "CodeGenerator",
+      "category": "dev",
+      "tools": [
+        "execute_in_sandbox",
+        "manage_worktree",
+        "enforce_tdd"
+      ],
+      "path": "skills/dev/dev_01/SKILL.md",
+      "inputs": [
+        "module_spec",
+        "design_doc"
+      ],
+      "outputs": [
+        "generated_code",
+        "test_stub"
+      ]
+    },
+    "dev_02": {
+      "name": "APIDesignPro",
+      "category": "dev",
+      "tools": [
+        "execute_in_sandbox",
+        "guardrails"
+      ],
+      "path": "skills/dev/dev_02/SKILL.md",
+      "inputs": [
+        "api_endpoints",
+        "data_model"
+      ],
+      "outputs": [
+        "api_review",
+        "optimization_hints"
+      ]
+    },
+    "dev_03": {
+      "name": "FrontendEngineer",
+      "category": "dev",
+      "tools": [
+        "execute_in_sandbox",
+        "guardrails"
+      ],
+      "path": "skills/dev/dev_03/SKILL.md",
+      "inputs": [
+        "component_tree",
+        "perf_budget"
+      ],
+      "outputs": [
+        "frontend_code",
+        "perf_report"
+      ]
+    },
+    "dev_04": {
+      "name": "DatabaseArchitect",
+      "category": "dev",
+      "tools": [
+        "execute_in_sandbox",
+        "query_status"
+      ],
+      "path": "skills/dev/dev_04/SKILL.md",
+      "inputs": [
+        "schema_draft",
+        "query_workload"
+      ],
+      "outputs": [
+        "optimized_schema",
+        "index_plan"
+      ]
+    },
+    "dev_05": {
+      "name": "CodeReviewer",
+      "category": "dev",
+      "tools": [
+        "guardrails",
+        "query_rule"
+      ],
+      "path": "skills/dev/dev_05/SKILL.md",
+      "inputs": [
+        "diff_patch",
+        "review_checklist"
+      ],
+      "outputs": [
+        "review_comments",
+        "approve_reject"
+      ]
+    },
+    "dev_06": {
+      "name": "SecurityAuditor",
+      "category": "dev",
+      "tools": [
+        "guardrails",
+        "execute_in_sandbox"
+      ],
+      "path": "skills/dev/dev_06/SKILL.md",
+      "inputs": [
+        "code_base",
+        "dependency_list"
+      ],
+      "outputs": [
+        "vulnerabilities",
+        "security_score"
+      ]
+    },
+    "dev_07": {
+      "name": "PerformanceEngineer",
+      "category": "dev",
+      "tools": [
+        "execute_in_sandbox",
+        "query_status"
+      ],
+      "path": "skills/dev/dev_07/SKILL.md",
+      "inputs": [
+        "benchmark_suite",
+        "baseline"
+      ],
+      "outputs": [
+        "perf_metrics",
+        "bottlenecks"
+      ]
+    },
+    "dev_08": {
+      "name": "TDDEnforcer",
+      "category": "dev",
+      "tools": [
+        "enforce_tdd",
+        "manage_worktree"
+      ],
+      "path": "skills/dev/dev_08/SKILL.md",
+      "inputs": [
+        "module_path",
+        "test_scope"
+      ],
+      "outputs": [
+        "tdd_status",
+        "coverage"
+      ]
+    },
+    "dev_09": {
+      "name": "TechDebtTracker",
+      "category": "dev",
+      "tools": [
+        "query_status",
+        "create_dropbox"
+      ],
+      "path": "skills/dev/dev_09/SKILL.md",
+      "inputs": [
+        "code_module",
+        "debt_threshold"
+      ],
+      "outputs": [
+        "debt_items",
+        "priority"
+      ]
+    },
+    "dev_10": {
+      "name": "RefactoringAssistant",
+      "category": "dev",
+      "tools": [
+        "execute_in_sandbox",
+        "enforce_tdd"
+      ],
+      "path": "skills/dev/dev_10/SKILL.md",
+      "inputs": [
+        "target_code",
+        "refactor_intent"
+      ],
+      "outputs": [
+        "refactored_code",
+        "risk_assessment"
+      ]
+    },
+    "dev_11": {
+      "name": "SBOMGenerator",
+      "category": "dev",
+      "tools": [
+        "execute_in_sandbox",
+        "query_status"
+      ],
+      "path": "skills/dev/dev_11/SKILL.md",
+      "inputs": [
+        "build_output",
+        "dependencies"
+      ],
+      "outputs": [
+        "sbom_json",
+        "license_inventory"
+      ]
+    },
+    "dev_12": {
+      "name": "BuildPipeline",
+      "category": "dev",
+      "tools": [
+        "trigger_workflow",
+        "execute_in_sandbox"
+      ],
+      "path": "skills/dev/dev_12/SKILL.md",
+      "inputs": [
+        "pipeline_spec",
+        "triggers"
+      ],
+      "outputs": [
+        "pipeline_config",
+        "ci_status"
+      ]
+    },
+    "test_01": {
+      "name": "TestPlanner",
+      "category": "test",
+      "tools": [
+        "query_rule",
+        "save_checkpoint"
+      ],
+      "path": "skills/test/test_01/SKILL.md",
+      "inputs": [
+        "feature_spec",
+        "coverage_target"
+      ],
+      "outputs": [
+        "test_plan",
+        "test_cases"
+      ]
+    },
+    "test_02": {
+      "name": "TestExecutor",
+      "category": "test",
+      "tools": [
+        "execute_in_sandbox",
+        "query_status"
+      ],
+      "path": "skills/test/test_02/SKILL.md",
+      "inputs": [
+        "test_suite",
+        "env"
+      ],
+      "outputs": [
+        "results",
+        "failures"
+      ]
+    },
+    "test_03": {
+      "name": "PerformanceBaseline",
+      "category": "test",
+      "tools": [
+        "execute_in_sandbox",
+        "query_status"
+      ],
+      "path": "skills/test/test_03/SKILL.md",
+      "inputs": [
+        "perf_scenario",
+        "threshold"
+      ],
+      "outputs": [
+        "baseline",
+        "regression_flags"
+      ]
+    },
+    "test_04": {
+      "name": "SecurityTest",
+      "category": "test",
+      "tools": [
+        "guardrails",
+        "execute_in_sandbox"
+      ],
+      "path": "skills/test/test_04/SKILL.md",
+      "inputs": [
+        "attack_surface",
+        "compliance_std"
+      ],
+      "outputs": [
+        "findings",
+        "pen_results"
+      ]
+    },
+    "test_05": {
+      "name": "AcceptanceValidator",
+      "category": "test",
+      "tools": [
+        "confirm_gate",
+        "query_rule"
+      ],
+      "path": "skills/test/test_05/SKILL.md",
+      "inputs": [
+        "acceptance_criteria",
+        "test_evidence"
+      ],
+      "outputs": [
+        "acceptance_verdict",
+        "signoff"
+      ]
+    },
+    "deploy_01": {
+      "name": "ReleaseManager",
+      "category": "deploy",
+      "tools": [
+        "execute_in_sandbox",
+        "trigger_workflow"
+      ],
+      "path": "skills/deploy/deploy_01/SKILL.md",
+      "inputs": [
+        "version",
+        "release_notes"
+      ],
+      "outputs": [
+        "release_artifact",
+        "version_tag"
+      ]
+    },
+    "deploy_02": {
+      "name": "SecurityAuditFinal",
+      "category": "deploy",
+      "tools": [
+        "guardrails",
+        "query_status"
+      ],
+      "path": "skills/deploy/deploy_02/SKILL.md",
+      "inputs": [
+        "release_candidate",
+        "audit_scope"
+      ],
+      "outputs": [
+        "final_audit",
+        "blockers"
+      ]
+    },
+    "deploy_03": {
+      "name": "DeploymentOrchestrator",
+      "category": "deploy",
+      "tools": [
+        "trigger_workflow",
+        "query_status"
+      ],
+      "path": "skills/deploy/deploy_03/SKILL.md",
+      "inputs": [
+        "deploy_targets",
+        "strategy"
+      ],
+      "outputs": [
+        "deploy_report",
+        "health_check"
+      ]
+    },
+    "deploy_04": {
+      "name": "RollbackManager",
+      "category": "deploy",
+      "tools": [
+        "restore_checkpoint",
+        "manage_worktree"
+      ],
+      "path": "skills/deploy/deploy_04/SKILL.md",
+      "inputs": [
+        "rollback_trigger",
+        "last_good"
+      ],
+      "outputs": [
+        "rollback_verdict",
+        "restored_state"
+      ]
+    },
+    "collab_01": {
+      "name": "DropBoxManager",
+      "category": "collab",
+      "tools": [
+        "create_dropbox",
+        "query_status"
+      ],
+      "path": "skills/collab/collab_01/SKILL.md",
+      "inputs": [
+        "doc_type",
+        "participants"
+      ],
+      "outputs": [
+        "dropbox_id",
+        "shared_context"
+      ]
+    },
+    "collab_02": {
+      "name": "TaskChainOrchestrator",
+      "category": "collab",
+      "tools": [
+        "create_chat_chain",
+        "manage_task_lifecycle"
+      ],
+      "path": "skills/collab/collab_02/SKILL.md",
+      "inputs": [
+        "objective",
+        "task_graph"
+      ],
+      "outputs": [
+        "chain_status",
+        "blockers"
+      ]
+    },
+    "collab_03": {
+      "name": "MeetingRecorder",
+      "category": "collab",
+      "tools": [
+        "create_dropbox",
+        "create_chat_chain"
+      ],
+      "path": "skills/collab/collab_03/SKILL.md",
+      "inputs": [
+        "meeting_type",
+        "attendees"
+      ],
+      "outputs": [
+        "minutes",
+        "decision_log"
+      ]
+    },
+    "collab_04": {
+      "name": "KnowledgeGraph",
+      "category": "collab",
+      "tools": [
+        "query_status",
+        "create_dropbox"
+      ],
+      "path": "skills/collab/collab_04/SKILL.md",
+      "inputs": [
+        "project_entities",
+        "relations"
+      ],
+      "outputs": [
+        "knowledge_graph",
+        "query_index"
+      ]
+    },
+    "tool_01": {
+      "name": "GitWorkflow",
+      "category": "tool",
+      "tools": [
+        "manage_worktree",
+        "execute_in_sandbox"
+      ],
+      "path": "skills/tool/tool_01/SKILL.md",
+      "inputs": [
+        "branch_strategy",
+        "repo"
+      ],
+      "outputs": [
+        "branch_map",
+        "workflow_rules"
+      ]
+    },
+    "tool_02": {
+      "name": "CI_CDPipeline",
+      "category": "tool",
+      "tools": [
+        "trigger_workflow",
+        "execute_in_sandbox"
+      ],
+      "path": "skills/tool/tool_02/SKILL.md",
+      "inputs": [
+        "ci_stages",
+        "cd_policy"
+      ],
+      "outputs": [
+        "pipeline",
+        "deploy_hooks"
+      ]
+    },
+    "tool_03": {
+      "name": "VersionManager",
+      "category": "tool",
+      "tools": [
+        "query_status",
+        "manage_task_lifecycle"
+      ],
+      "path": "skills/tool/tool_03/SKILL.md",
+      "inputs": [
+        "semver_policy",
+        "changelog"
+      ],
+      "outputs": [
+        "version_matrix",
+        "migration_notes"
+      ]
+    },
+    "tool_04": {
+      "name": "ConfigManager",
+      "category": "tool",
+      "tools": [
+        "init_project",
+        "query_rule"
+      ],
+      "path": "skills/tool/tool_04/SKILL.md",
+      "inputs": [
+        "env_profiles",
+        "config_schema"
+      ],
+      "outputs": [
+        "config_state",
+        "env_switch"
+      ]
+    },
+    "security_01": {
+      "name": "GuardrailsEngine",
+      "category": "security",
+      "tools": [
+        "guardrails",
+        "query_rule"
+      ],
+      "path": "skills/security/security_01/SKILL.md",
+      "inputs": [
+        "direction",
+        "rule_set"
+      ],
+      "outputs": [
+        "guard_result",
+        "violations"
+      ]
+    },
+    "security_02": {
+      "name": "AuditLogger",
+      "category": "security",
+      "tools": [
+        "trace_operation",
+        "query_trace"
+      ],
+      "path": "skills/security/security_02/SKILL.md",
+      "inputs": [
+        "event_stream",
+        "retention"
+      ],
+      "outputs": [
+        "audit_log",
+        "tamper_check"
+      ]
+    },
+    "security_03": {
+      "name": "ComplianceChecker",
+      "category": "security",
+      "tools": [
+        "guardrails",
+        "query_rule"
+      ],
+      "path": "skills/security/security_03/SKILL.md",
+      "inputs": [
+        "compliance_framework",
+        "report_type"
+      ],
+      "outputs": [
+        "compliance_report",
+        "exceptions"
+      ]
+    },
+    "obs_01": {
+      "name": "TraceCollector",
+      "category": "obs",
+      "tools": [
+        "trace_operation",
+        "query_trace"
+      ],
+      "path": "skills/obs/obs_01/SKILL.md",
+      "inputs": [
+        "span_root",
+        "sampling"
+      ],
+      "outputs": [
+        "trace_tree",
+        "metrics"
+      ]
+    },
+    "obs_02": {
+      "name": "ObservabilityReport",
+      "category": "obs",
+      "tools": [
+        "query_trace",
+        "query_status"
+      ],
+      "path": "skills/obs/obs_02/SKILL.md",
+      "inputs": [
+        "time_range",
+        "kpi_set"
+      ],
+      "outputs": [
+        "observability_report",
+        "anomalies"
+      ]
+    }
   }
 }
