@@ -1,65 +1,76 @@
-# v2.0 Production Layers / v2.0 生产层
+# v2.1 Hardened Production / v2.1 生产加固
 
-Four modules close the gaps flagged in the 2026 peer review (Red Hat "7 missing
-production capabilities", Microsoft agent-eval, MAST fault taxonomy).
+Four upgrades take the v2.0 layers from "runs" to "production-grade".
 
-## 1. OpenTelemetry + Grafana / 可观测性导出 — `charter/otel_export.py`
+## 1. X.509 Agent Certificates + mTLS (replaces HMAC) / `charter/x509_identity.py`
+
+Real X.509 agent certs (EC P-256) issued by a built-in root CA; every tool
+call is ECDSA-signed and verified. Anti-replay, capability-bound, and chain-
+validated. Optional extra: `pip install charter-orchestrator[crypto]`.
 
 ```python
-from charter import export_project
-from charter.core import _REGISTRY
-
-p = _REGISTRY[pid]
-otlp = export_project(p.trace, fmt="otlp")        # -> OTLP/JSON resourceSpans
-prom = export_project(p.trace, pid, fmt="prometheus")  # -> scrapeable text
-dash = export_project(p.trace, fmt="grafana")      # -> importable dashboard JSON
+from charter import x509_issue, x509_sign, x509_verify
+cert = x509_issue("dev-1", ["execute_in_sandbox"])
+call = x509_sign("dev-1", "execute_in_sandbox", {"cmd": "pytest"})
+assert x509_verify(call, {"cmd": "pytest"})["ok"]
+# replay / tamper / capability / expiry all rejected
 ```
 
-Spans are OTel-semantic (`traceId/spanId/attributes`), so swapping to the official
-`opentelemetry-sdk` exporter is a one-liner.
+Without `cryptography`, the stdlib HMAC path in `charter/identity.py` stays
+available as the fallback, so CI is green with or without the extra.
 
-## 2. Agent Cryptographic Identity / 加密身份 — `charter/identity.py`
+## 2. Real Grafana Data Source Provisioning / `charter/grafana.py`
 
-Every agent gets a signed identity; every tool call is HMAC-signed with a nonce +
-expiry, then verified. Closes Red Hat's #1 gap (cryptographic identity + tool
-governance).
+Goes beyond the v2.0 dashboard JSON: provisions a **Prometheus data source**,
+a **Tempo** trace data source, a scrape config, and an OTLP exporter target,
+all importable into a Grafana stack.
 
 ```python
-from charter import issue_agent, sign_tool_call, verify_tool_call
-
-issue_agent("dev-1", ["execute_in_sandbox"])
-call = sign_tool_call("dev-1", "execute_in_sandbox", {"cmd": "pytest"})
-assert verify_tool_call(call, {"cmd": "pytest"})["ok"]
-# replay / tamper / capability / expiry all rejected:
-assert not verify_tool_call(call, {"cmd": "pytest"})["ok"]   # replayed nonce
-assert not verify_tool_call(call, {"cmd": "other"})["ok"]    # digest mismatch
+from charter import live_metrics_demo
+bundle = live_metrics_demo()
+print(bundle["prometheus_ds"])   # -> /etc/grafana/provisioning/datasources
+print(bundle["dashboard"])       # -> importable dashboard with traces panel
+print(bundle["prometheus_scrape"])  # -> prometheus.yml scrape config
 ```
 
-Stdlib-only (HMAC-SHA256). Production hardening (v2.1): X.509 agent certs + mTLS.
+## 3. LLM Embedding Backends / `charter/llm_embed.py`
 
-## 3. Vector Memory / 向量记忆 — `charter/vector_memory.py`
-
-Semantic recall replaces the v1.1 keyword LIKE queries. Default is a
-deterministic hashing-trick embedder (stdlib, offline, CI-safe); plug in any
-`(text, dim) -> [float]` for a real embedding model.
+Swaps the offline hashing embedder for a *real* semantic model. Provider-
+agnostic via the `Embedder` protocol; builtin `AgnesEmbedder` and
+`OpenAIEmbedder` (OpenAI-compatible `/embeddings`, stdlib HTTP, no `requests`).
 
 ```python
-from charter import VectorMemory
-vm = VectorMemory(path="mem.sqlite", dim=128)
+from charter import VectorMemory, AgnesEmbedder
+vm = VectorMemory(path="mem.sqlite", embed=AgnesEmbedder(model="agnes-embed"))
 vm.remember("dev-1", "we chose SQLite as the cache layer")
-vm.recall("dev-1", "cache storage decision", limit=3)  # cosine + recency + salience
+vm.recall("dev-1", "cache storage decision")   # true semantic ranking
 ```
 
-## 4. SOP Template Marketplace / 行业模板市场 — `charter/templates/`
+Pass any `(text, dim) -> [float]` as `embed=`; in CI with no key, the hashing
+embedder remains the default so tests stay green offline.
 
-Pre-governed 10-stage SOPs per domain. Drop a JSON into `charter/templates/`
-to ship your own; `list_templates()` discovers it.
+## 4. Template Marketplace PR Flow / `charter/template_pr.py`
+
+Community industry templates now go through a governance PR gate instead of a
+bare file drop: schema-validate → review/approve → merge. `render_pr()` emits
+the exact GitHub PR payload (title + checklist body + JSON) so a human or CI
+can open it.
 
 ```python
-from charter import list_templates, apply_template
-print([t["name"] for t in list_templates()])
-cfg = apply_template({}, "finance")   # strict TDD, 60k budget, SOC2-aligned gates
+from charter import TemplateMarketplace, render_pr
+m = TemplateMarketplace()
+pr = m.propose({...spec...}, author="alice")
+m.approve(pr.pr_id, "reviewer-1")
+m.merge(pr.pr_id)             # now loadable
+print(render_pr(spec, "alice"))  # -> {repo, filename, title, body, json}
 ```
 
-Builtin: `finance` (SOC2), `healthcare` (HIPAA/PHI), `e-commerce` (high-throughput),
-`research` (reproducible, TDD off).
+---
+## Optional Extras / 可选依赖
+
+```bash
+pip install "charter-orchestrator[crypto]"   # X.509 identity
+pip install "charter-orchestrator[llm]"      # requests for LLM embedders
+```
+
+Both are optional - the core + fallbacks run on stdlib alone.
