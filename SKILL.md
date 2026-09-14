@@ -910,13 +910,22 @@ v1.0 为首次公开发布版本，包含以下全量能力：
 - ✅ SPIFFE 接真实 SPIRE Server（`charter/spiffe_grpc.py`，gRPC 通道 + 本地 fallback，调用形态一致）
 - ✅ 模板 PR 自动 CI + 社区评分（`charter/pr_community.py`，spec-integrity gate + helpful/adopted/reported 加权分）
 
-**v2.5 候选 / v2.5 Candidates:**
-- 在线 judge 共识接多 provider 投票 + 加权投票（按历史准确率调权）
-- 记忆压缩接 LLM 长对话 → 分层摘要（episode → session → project）
-- SLO 告警接 Prometheus Alertmanager 规则（PromQL 自动生成）+ 真实 webhook
-- SPIFFE 接 SPIRE gRPC 的 attestation（工作负载密钥持有证明）
-- 社区评分接真实 GitHub PR 评论/反应 + 自动 merge 门槛
-- 跨仓库多 agent checkpoint 共享（团队协作审计）
+**v2.5 已实现 / v2.5 Shipped:**
+- ✅ 多 provider judge 加权投票（`charter/judge_voting.py`，按历史准确率调权 + 一致性）
+- ✅ 记忆分层压缩（`charter/memory_hierarchy.py`，episode → session → project 三级）
+- ✅ Prometheus Alertmanager 规则自动生成（`charter/prometheus_rules.py`，SLO-aware PromQL + Alertmanager provisioning）
+- ✅ SPIRE gRPC 工作负载 attestation（`charter/spiffe_attestation.py`，k8s_pod/jwt/opaque 三类 + 本地 fallback）
+- ✅ 真实 GitHub PR 评论评分 + auto-merge gate（`charter/pr_comment_scoring.py`）
+- ✅ 跨仓库多 agent checkpoint 共享（`charter/cross_repo.py`，file-backed 总线 + 回灌 core）
+
+**v2.6 候选 / v2.6 Candidates:**
+- 加权投票接真实 LLM-as-judge 多 provider 并发 + 结果缓存
+- 记忆分层压缩接向量聚类（同类 episode 自动归并）
+- Prometheus 规则接 Grafana Mimir 多租户 + 自动 label propagation
+- SPIRE attestation 接 k8s SPIRE Agent（workload API）真实 mTLS
+- PR 评论评分接语义分析（LLM 解析评论情感/具体性）
+- 跨仓库 checkpoint 接团队级共享存储（S3 / GCS）+ 审计日志
+
 
 
 - **可观测性升级**：`trace_operation` 输出标准 OpenTelemetry，接入 Grafana / Jaeger
