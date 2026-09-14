@@ -1,0 +1,38 @@
+{
+  "name": "finance",
+  "label": "Finance & Regulated (SOC2-aligned)",
+  "stage_gates": {
+    "stage_4": [
+      "architecture_doc_locked",
+      "tech_selection",
+      "security_review_signed"
+    ],
+    "stage_5": [
+      "env_ready",
+      "ci_green",
+      "human_approver",
+      "compliance_signoff"
+    ],
+    "stage_7": [
+      "integration_tests_passed",
+      "acceptance_signed",
+      "audit_log_exported"
+    ],
+    "stage_8": [
+      "release_checklist",
+      "artifacts_built",
+      "rollback_plan_signed"
+    ]
+  },
+  "tdd_enforcement": "strict",
+  "token_budget": 60000,
+  "guardrail_extra_patterns": [
+    "(?i)select\\s+.*password",
+    "(?i)exfiltrat"
+  ],
+  "audit_required_stages": [
+    "stage_5",
+    "stage_7",
+    "stage_8"
+  ]
+}
