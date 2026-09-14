@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "charter-orchestrator"
+version = "1.1.0"
+description = "Full-lifecycle governance & orchestration framework for AI agents - executable"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [{name = "CloudPPT-AI", email = "63468969@qq.com"}]
+keywords = ["ai-agents", "multi-agent", "orchestration", "governance", "llm"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Intended Audience :: Developers",
+  "Topic :: Software Development :: Libraries",
+]
+
+[project.scripts]
+charter = "charter.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+include = ["charter*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
