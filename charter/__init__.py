@@ -9,7 +9,7 @@ Quick start:
     from charter import init_project, advance_stage, confirm_gate, query_status
     python -m charter.cli demo
 """
-__version__ = "2.2.0"
+__version__ = "2.3.0"
 
 from .core import (
     init_project, advance_stage, confirm_gate, query_status,
@@ -70,6 +70,20 @@ from .trace_link import (
     aggregate_traces, slo_summary,
 )
 
+# --- v2.3 production linkages ---
+from .mtls import (
+    TrustAnchor, MTLSResult, MTLSConfig, verify_chain,
+    verify_server_cert, build_mtls_session, mtls_check,
+)
+from .github_pr import TemplatePRBot, open_template_pr, PRResult
+from .embed_cache import (
+    EmbedCache, CachedEmbedder, production_embedder, embed_with_cache,
+)
+from .spiffe import (
+    TrustDomain, SVID, SVIDBundle, build_spiffe_id, parse_spiffe_id,
+    issue_svid, verify_svid, bundle_svid, SPIFFEError,
+)
+
 
 __all__ = [
     # v1.1 core
@@ -99,4 +113,11 @@ __all__ = [
     "SessionStore", "DEFAULT_DB",
     "TraceLink", "JaegerPush", "TempoPush", "JaegerQuery",
     "aggregate_traces", "slo_summary",
+    # v2.3
+    "TrustAnchor", "MTLSResult", "MTLSConfig", "verify_chain",
+    "verify_server_cert", "build_mtls_session", "mtls_check",
+    "TemplatePRBot", "open_template_pr", "PRResult",
+    "EmbedCache", "CachedEmbedder", "production_embedder", "embed_with_cache",
+    "TrustDomain", "SVID", "SVIDBundle", "build_spiffe_id", "parse_spiffe_id",
+    "issue_svid", "verify_svid", "bundle_svid", "SPIFFEError",
 ]
