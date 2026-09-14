@@ -1,0 +1,33 @@
+{
+  "name": "healthcare",
+  "label": "Healthcare & HIPAA",
+  "stage_gates": {
+    "stage_4": [
+      "architecture_doc_locked",
+      "tech_selection",
+      "data_class_plan"
+    ],
+    "stage_5": [
+      "env_ready",
+      "ci_green",
+      "human_approver",
+      "phi_handling_review"
+    ],
+    "stage_7": [
+      "integration_tests_passed",
+      "acceptance_signed",
+      "phi_encryption_verified"
+    ]
+  },
+  "tdd_enforcement": "strict",
+  "token_budget": 50000,
+  "guardrail_extra_patterns": [
+    "(?i)\\b(hipaa|phi|patient)\\s+data",
+    "ssn\\s*[:=]"
+  ],
+  "audit_required_stages": [
+    "stage_4",
+    "stage_5",
+    "stage_7"
+  ]
+}
