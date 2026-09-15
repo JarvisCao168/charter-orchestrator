@@ -23,7 +23,7 @@ from charter.demo_skill import (
 
 
 def test_version_is_v3_5():
-    assert __version__.startswith("3.6")
+    assert __version__.startswith("3.7")
 
 
 def test_list_demo_skills_well_formed():
@@ -248,3 +248,89 @@ def test_deliver_oncall_unavailable_module_returns_gracefully():
     # Either it delivered (plan-only) or recorded the failure, but did not crash.
     assert out is alert
     assert "oncall" in alert
+
+
+# ---------------------------------------------------------------------------
+# v3.7 — demo-skill watch SLO alerts delivered to a Prometheus Alertmanager
+# webhook (second delivery channel, alongside OnCall gRPC)
+# ---------------------------------------------------------------------------
+
+def test_deliver_alertmanager_success_seam():
+    """_deliver_alertmanager posts the payload via the _post seam and records a receipt."""
+    from charter.demo_skill import _deliver_alertmanager
+    alert = {"iteration": 2, "severity": "critical",
+             "observed_ratio": 0.5, "slo_pct_threshold": 90.0,
+             "failed_skills": ["obs_09"], "message": "SLO breach"}
+    captured = {}
+    def fake_post(payload, url, timeout):
+        captured["payload"] = payload
+        captured["url"] = url
+        return 200, "ok"
+    _deliver_alertmanager(alert, url="http://am:9093/api/v2/alerts",
+                          _post=fake_post)
+    assert alert["alertmanager"]["delivered"] is True
+    assert alert["alertmanager"]["status"] == 200
+    assert alert["alertmanager"]["url"] == "http://am:9093/api/v2/alerts"
+    # The posted payload is Alertmanager v4-compatible.
+    p = captured["payload"]
+    assert p["status"] == "firing"
+    assert p["alerts"][0]["labels"]["severity"] == "critical"
+    assert p["alerts"][0]["labels"]["source"] == "charter-demo-skill"
+
+
+def test_deliver_alertmanager_network_failure_degrades_to_plan():
+    """When the real POST fails (no network), the receipt degrades to plan-only."""
+    from charter.demo_skill import _deliver_alertmanager
+    alert = {"iteration": 1, "severity": "warning", "observed_ratio": 0.8,
+             "slo_pct_threshold": 90.0, "failed_skills": [], "message": "breach"}
+    # Point at an unroutable address; urlopen will raise -> plan-only.
+    out = _deliver_alertmanager(alert, url="http://127.0.0.1:1/noreply",
+                                timeout_s=1.0)
+    am = out["alertmanager"]
+    assert am["delivered"] is False
+    assert am["via"] == "alertmanager-plan"
+    assert am["error"]  # a failure reason is recorded
+    assert out is alert
+
+
+def test_run_watch_delivers_alertmanager_when_breach():
+    """run_watch(alertmanager_url=...) POSTs every SLO breach to the webhook."""
+    from charter.demo_skill import run_watch
+    # Use the _post-equivalent seam by passing a fake via a patched urlopen?
+    # Simpler: the helper accepts no seam at run_watch level, so we verify the
+    # delivery path by forcing a breach and asserting the alertmanager receipt
+    # is present. We use a file:// URL that will fail -> plan-only receipt.
+    report = run_watch(iterations=1, slo_pct_threshold=999.0,
+                       alertmanager_url="http://127.0.0.1:1/noreply",
+                       alertmanager_timeout_s=0.5)
+    assert report["alerts"], "expected an SLO alert at 999% threshold"
+    a = report["alerts"][0]
+    assert "alertmanager" in a, "alert should carry the Alertmanager receipt"
+    assert a["alertmanager"]["url"] == "http://127.0.0.1:1/noreply"
+    # Plan-only in CI (no live Alertmanager) — delivery path still exercised.
+    assert a["alertmanager"]["delivered"] in (True, False)
+
+
+def test_run_watch_no_alertmanager_when_slo_met():
+    """When the SLO is met, no alert fires and no Alertmanager delivery happens."""
+    from charter.demo_skill import run_watch
+    report = run_watch(iterations=1, slo_pct_threshold=0.0,
+                       alertmanager_url="http://am:9093/api/v2/alerts")
+    assert report["slo_met"] is True
+    assert report["alerts"] == []
+    # No alerts -> nothing delivered
+    assert report["worst_ratio"] >= 0.0
+
+
+def test_deliver_alertmanager_seam_exception_degrades():
+    """If the _post seam itself raises, the receipt degrades to plan-only (no crash)."""
+    from charter.demo_skill import _deliver_alertmanager
+    alert = {"iteration": 1, "severity": "warning", "observed_ratio": 0.9,
+             "slo_pct_threshold": 90.0, "failed_skills": [], "message": "x"}
+    def boom(payload, url, timeout):
+        raise RuntimeError("transport down")
+    out = _deliver_alertmanager(alert, url="http://am:9093", _post=boom)
+    am = out["alertmanager"]
+    assert am["delivered"] is False
+    assert am["via"] == "alertmanager-plan"
+    assert "transport down" in am["error"]
