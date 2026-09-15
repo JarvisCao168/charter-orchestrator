@@ -8,7 +8,7 @@ description: >
   managing project checkpoints, routing model dispatch, or auditing
   agent operations against governance rules.
 license: MIT
-version: "3.2.0"
+version: "3.3.0"
 author: JarvisCao168
 tags:
   - agent-governance
@@ -88,7 +88,7 @@ mcp-server:
 > **Skill 名称**：Charter Orchestrator
 > **Version**: 3.1.0
 > **Charter / 章程**: 智能体团队协作章程（终极完整版）
-> **Release / 发布**: 2026-09-14 v1.0.0 · 2026-09-15 v1.1.0 · 2026-09-15 v2.0.0 · 2026-09-15 v3.0.0 (full production) · 2026-09-15 v3.1.0 (MCP + official SKILL.md format) · 2026-09-15 v3.2.0 (107 skills + MCP SSE/HTTP)
+> **Release / 发布**: 2026-09-14 v1.0.0 · 2026-09-15 v1.1.0 · 2026-09-15 v2.0.0 · 2026-09-15 v3.0.0 (full production) · 2026-09-15 v3.1.0 (MCP + official SKILL.md format) · 2026-09-15 v3.2.0 (107 skills + MCP SSE/HTTP) · 2026-09-15 v3.3.0 (skill unit tests + demo-skill)
 > **许可证**：MIT
 > **定位**：Agent之上的全链路治理与编排框架 —— 定义 Agent 怎么干活、干到什么标准、什么时候该停下来让人确认
 
