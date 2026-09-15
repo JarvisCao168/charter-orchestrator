@@ -22,8 +22,8 @@ from charter.demo_skill import (
 )
 
 
-def test_version_is_v3_4():
-    assert __version__.startswith("3.4")
+def test_version_is_v3_5():
+    assert __version__.startswith("3.5")
 
 
 def test_list_demo_skills_well_formed():
@@ -124,4 +124,69 @@ def test_run_all_demos_all_bespoke_pass():
 
 def test_main_all_exits_zero():
     rc = main(["--all"])
+    assert rc == 0
+
+
+# ---------------------------------------------------------------------------
+# --watch: continuous run + SLO threshold alerting (v3.5)
+# ---------------------------------------------------------------------------
+
+from charter.demo_skill import run_watch, _eval_slo
+
+
+def test_eval_slo_met():
+    report = {"total_skills": 10, "passed": 10}
+    slo = _eval_slo(report, 90.0)
+    assert slo["met"] is True
+    assert slo["alert"] is False
+    assert slo["ratio"] == 1.0
+
+
+def test_eval_slo_breach_fires_alert():
+    report = {"total_skills": 10, "passed": 5}
+    slo = _eval_slo(report, 90.0)
+    assert slo["met"] is False
+    assert slo["alert"] is True
+    assert slo["ratio"] == 0.5
+
+
+def test_run_watch_single_iteration_slo_met():
+    report = run_watch(iterations=1, slo_pct_threshold=50.0, _sleep_s=0.0)
+    # all bespoke chains pass offline, so a 50% SLO is met
+    assert report["slo_met"] is True
+    assert report["iterations"] == 1
+    assert report["alerts"] == []
+    assert report["history"][0]["slo"]["met"] is True
+
+
+def test_run_watch_high_threshold_fires_alert():
+    # A 101% SLO is impossible -> every iteration breaches and alerts,
+    # even when the underlying pass ratio is a perfect 1.0
+    report = run_watch(iterations=2, slo_pct_threshold=101.0, _sleep_s=0.0)
+    assert report["slo_met"] is False
+    assert len(report["alerts"]) == 2
+    assert report["alerts"][0]["iteration"] == 1
+    assert report["alerts"][1]["iteration"] == 2
+    # worst_ratio tracks the actual pass ratio (1.0 when all pass), while the
+    # SLO breach is driven by the threshold, not the ratio
+    assert report["worst_ratio"] == 1.0
+    assert report["alerts"][0]["severity"] in ("warning", "critical")
+    assert report["alerts"][0]["observed_ratio"] == 1.0
+
+
+def test_run_watch_tracks_worst_ratio():
+    report = run_watch(iterations=3, slo_pct_threshold=101.0, _sleep_s=0.0)
+    assert len(report["history"]) == 3
+    assert report["worst_ratio"] == min(h["slo"]["ratio"] for h in report["history"])
+
+
+def test_main_watch_exits_nonzero_on_breach():
+    # 101% SLO guarantees a breach -> nonzero exit
+    rc = main(["--watch", "--iterations", "1", "--slo-pct", "101"])
+    assert rc == 1
+
+
+def test_main_watch_exits_zero_when_met():
+    # 0% SLO is always met -> exit 0
+    rc = main(["--watch", "--iterations", "1", "--slo-pct", "0"])
     assert rc == 0
