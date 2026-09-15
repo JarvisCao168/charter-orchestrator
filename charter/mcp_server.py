@@ -679,17 +679,46 @@ class CharterMCPServer:
                 pass
         return True
 
+    def _tool_result_payload(self, tool_name: str) -> Dict[str, Any]:
+        """v3.10: build the full result payload for a tool's result resource.
+
+        Reads the last-known result from the ``_tool_results`` store (written by
+        every ``tools/call``) and returns the same JSON shape that
+        ``resources/read`` on ``charter://tools/<name>/result`` produces. This
+        lets a ``resources/changed`` push carry the *full* result text so a
+        subscriber does not need to issue a follow-up ``resources/read``.
+        """
+        import json as _json
+        with self._tool_results_lock:
+            last = self._tool_results.get(tool_name)
+        if last is None:
+            return {"tool": tool_name, "found": False,
+                    "note": "no tool result yet — call the tool first"}
+        return {
+            "tool": tool_name,
+            "found": True,
+            "ok": last.get("ok", False),
+            "ts": last.get("ts"),
+            "result": last.get("result"),
+        }
+
     def _notify_tool_result_changed(self, tool_name: str,
                                     outcome: Dict[str, Any]) -> int:
-        """v3.8: push a resources/changed event to every client subscribed to
-        ``tool_name``'s result resource. Returns the number of clients notified."""
+        """v3.8 (v3.10 enhanced): push a resources/changed event to every client
+        subscribed to ``tool_name``'s result resource. The event now carries the
+        *full* last-result payload (tool result JSON), so subscribers need not
+        issue a follow-up resources/read. Returns the number of clients notified.
+        """
         with self._subs_lock:
             keys = [k for k, tools in self._tool_subscriptions.items()
                     if tool_name in tools]
         resource_uri = f"charter://tools/{tool_name}/result"
+        # v3.10: carry the full result in the change event.
+        full_payload = self._tool_result_payload(tool_name)
         notified = 0
         for key in keys:
-            payload = {"tool": tool_name, "result": outcome,
+            payload = {"tool": tool_name, "last_result": full_payload,
+                       "result": outcome,
                        "ok": outcome.get("ok", False)}
             if self.notify_resource_changed(resource_uri, key, payload=payload):
                 notified += 1
