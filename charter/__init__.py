@@ -9,7 +9,7 @@ Quick start:
     from charter import init_project, advance_stage, confirm_gate, query_status
     python -m charter.cli demo
 """
-__version__ = "3.10.0"
+__version__ = "3.11.0"
 
 from .core import (
     init_project, advance_stage, confirm_gate, query_status,
@@ -374,3 +374,7 @@ __all__ = [
 from .mcp_server import CharterMCPServer, list_mcp_tools, load_skill, run_tool  # noqa: F401
 
 from .demo_skill import (run_demo_skill, list_demo_skills, DEMO_SKILLS, run_all_demos, run_watch, _eval_slo, _deliver_oncall, _deliver_alertmanager, _query_prometheus, run_watch_from_promql, _query_prometheus_range, _aggregate_range_values, _snapshot_watch_report)  # noqa: F401
+from .validation_gateway import (ValidationGateway, CircuitBreaker, BreakerState, check_contract, check_data_alignment, check_consistency, layered_check, with_breaker)  # noqa: F401
+from .critic_agent import (Critic, CriticPlan, CriticStep, CriticFinding, CriticReport, FindingSeverity)  # noqa: F401
+from .semantic_trace import (SemanticSpan, SemanticTracer, cosine_similarity, make_embedder, TraceVerdict)  # noqa: F401
+from .model_router import (TaskProfile, ModelTier, ModelRouter, SemanticCache, route_task, DEFAULT_TIERS)  # noqa: F401
