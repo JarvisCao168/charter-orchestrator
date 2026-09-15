@@ -743,7 +743,7 @@ Install: `pip install charter-orchestrator` (stdlib-only core). Optional extras:
   IAM roles + attaches the policies + puts the S3 bucket policy via boto3
   (dry-run when no session); `IamAuditLog` records every mutation;
   `iam_drift_report` reads the live state.
-## v2.10 — Multi-System Linkages (Phase 7)
+## v3.0 — Multi-System Linkages (Phase 7)
 
 - **Judge pool on a real K8s cluster + S3 + KEDA deployment** —
   `charter/judge_pool_deploy.py`: `JudgePoolDeployment` renders a
