@@ -6,7 +6,7 @@
 >
 > 定义 Agent 怎么干活、干到什么标准、什么时候该停下来让人确认
 
-[![Version](https://img.shields.io/badge/version-3.8.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
+[![Version](https://img.shields.io/badge/version-3.9.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Skill Definition](https://img.shields.io/badge/Skill-v2.1.0-green.svg)](SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
@@ -159,6 +159,24 @@ python -m charter.mcp_server     # stdio JSON-RPC
   CLI：`python -m charter.demo_skill --promql 'error_rate:rate5m' \
        --prometheus-base http://localhost:9090 --prometheus-threshold 0.01`。
 - 388 测试（原 372 + 4 工具结果推送 + 7 --promql + 1 版本净增），3.9 / 3.11 / 3.12 全绿。
+
+
+## 📊 v3.9 — MCP 工具结果 read 侧 + demo-skill watch --promql 区间聚合模式
+
+- **MCP 工具结果 read 侧**：`charter://tools/<name>/result` 现可用
+  `resources/read` 读取（调用过 → JSON 结果，未调用 → found=false 说明）；
+  每次 `tools/call` 自动记录最新结果（`_tool_results` 线程安全存储），
+  补齐 v3.8 只有 push 侧的工具结果 resource。
+- **demo-skill watch `--promql` 区间聚合**：`run_watch_from_promql(range_mode=True)`
+  查 `query_range`（`--prometheus-range-window` + `--prometheus-range-step`），
+  用 `_aggregate_range_values`（`--prometheus-range-agg` avg/max/min/sum/p95）
+  聚合成单点判 SLO，替代单点 instant query；报告标记 `promql-range` 模式。
+  ```bash
+  python -m charter.demo_skill --promql 'error_rate' --prometheus-base http://localhost:9090 \
+      --prometheus-range --prometheus-range-window 5m --prometheus-range-agg p95 \
+      --prometheus-threshold 0.01 --json
+  ```
+- 394 测试（原 383 + 3 工具结果 read + 8 range 聚合 + 1 版本净增 + 2 调整），3.9 / 3.11 / 3.12 全绿。
 
 
 ## 目录 / Table of Contents
