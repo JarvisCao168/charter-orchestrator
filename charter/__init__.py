@@ -9,7 +9,7 @@ Quick start:
     from charter import init_project, advance_stage, confirm_gate, query_status
     python -m charter.cli demo
 """
-__version__ = "2.6.0"
+__version__ = "2.7.0"
 
 from .core import (
     init_project, advance_stage, confirm_gate, query_status,
@@ -154,6 +154,33 @@ from .checkpoint_shared import (
     publish_to_team, pull_from_team, audit_report,
 )
 
+# --- v2.7 multi-system linkages (phase 4) ---
+from .judge_pool import (
+    JudgeTask, JudgePoolPlan, DistributedJudgePool,
+    plan_judge_pool, render_pool_manifests,
+)
+from .cluster_naming import (
+    HeuristicClusterNamer, LLMClusterNamer,
+    name_clusters, named_cluster_report, pick_namer,
+)
+from .oncall_routing import (
+    oncall_integrations, oncall_route_policy,
+    oncall_provisioning_bundle, route_for_alert,
+)
+from .spire_node_handshake import (
+    WorkloadSocketConfig, render_workload_socket_manifests,
+    validate_workload_socket, handshake_plan,
+)
+from .pr_autosuggest import (
+    HeuristicSuggester, LLMSuggester,
+    pr_autosuggest, autosuggest_pr_comments, pick_suggester,
+)
+from .checkpoint_rbac import (
+    TeamRBAC, TeamPolicy,
+    s3_versioning_config, s3_cross_region_replication,
+    team_policies,
+)
+
 
 __all__ = [
     # v1.1 core
@@ -222,4 +249,17 @@ __all__ = [
     "analyze_comment", "analyze_pr_comments", "pick_analyzer",
     "SharedCheckpointStore", "AuditLog", "publish_to_team",
     "pull_from_team", "audit_report",
+    # v2.7
+    "JudgeTask", "JudgePoolPlan", "DistributedJudgePool",
+    "plan_judge_pool", "render_pool_manifests",
+    "HeuristicClusterNamer", "LLMClusterNamer",
+    "name_clusters", "named_cluster_report", "pick_namer",
+    "oncall_integrations", "oncall_route_policy",
+    "oncall_provisioning_bundle", "route_for_alert",
+    "WorkloadSocketConfig", "render_workload_socket_manifests",
+    "validate_workload_socket", "handshake_plan",
+    "HeuristicSuggester", "LLMSuggester",
+    "pr_autosuggest", "autosuggest_pr_comments", "pick_suggester",
+    "TeamRBAC", "TeamPolicy", "s3_versioning_config",
+    "s3_cross_region_replication", "team_policies",
 ]
