@@ -1,9 +1,94 @@
+---
+name: charter-orchestrator
+description: >
+  Full-lifecycle governance & orchestration framework for AI agents.
+  Defines 20 enforceable governance tools, 47 structured skills across 9
+  categories, 10-stage SOP, and 13 rule categories with hard gates.
+  Use when: coordinating multi-agent teams, enforcing TDD/guardrails,
+  managing project checkpoints, routing model dispatch, or auditing
+  agent operations against governance rules.
+license: MIT
+version: "3.1.0"
+author: JarvisCao168
+tags:
+  - agent-governance
+  - multi-agent
+  - orchestration
+  - llm-agents
+  - tdd
+  - guardrails
+  - mcp
+  - spiiffe
+  - kubernetes
+  - observability
+allowed-tools:
+  - init_project
+  - advance_stage
+  - confirm_gate
+  - query_status
+  - query_rule
+  - list_skills
+  - execute_in_sandbox
+  - create_dropbox
+  - manage_task_lifecycle
+  - trigger_workflow
+  - create_chat_chain
+  - save_checkpoint
+  - restore_checkpoint
+  - dispatch_to_model
+  - manage_worktree
+  - enforce_tdd
+  - guardrails
+  - enable_autonomous_mode
+  - trace_operation
+  - query_trace
+charter-tools:
+  - init_project
+  - advance_stage
+  - confirm_gate
+  - query_status
+  - query_rule
+  - list_skills
+  - execute_in_sandbox
+  - create_dropbox
+  - manage_task_lifecycle
+  - trigger_workflow
+  - create_chat_chain
+  - save_checkpoint
+  - restore_checkpoint
+  - dispatch_to_model
+  - manage_worktree
+  - enforce_tdd
+  - guardrails
+  - enable_autonomous_mode
+  - trace_operation
+  - query_trace
+charter-skills:
+  total: 47
+  categories:
+    env: 7
+    analysis: 6
+    dev: 12
+    test: 5
+    deploy: 4
+    collab: 4
+    tool: 4
+    security: 3
+    obs: 2
+mcp-server:
+  module: charter.mcp_server
+  protocol: "2024-11-05"
+  transport: stdio
+  tools: 20
+  resources: 47
+---
+
 # Charter Orchestrator — Skill Definition
 
 > **Skill 名称**：Charter Orchestrator
-> **Version**: 2.1.0
+> **Version**: 3.1.0
 > **Charter / 章程**: 智能体团队协作章程（终极完整版）
-> **Release / 发布**: 2026-09-14 v1.0.0 · 2026-09-15 v1.1.0 · 2026-09-15 v2.0.0 · 2026-09-15 v2.1.0 (hardened production)
+> **Release / 发布**: 2026-09-14 v1.0.0 · 2026-09-15 v1.1.0 · 2026-09-15 v2.0.0 · 2026-09-15 v3.0.0 (full production) · 2026-09-15 v3.1.0 (MCP + official SKILL.md format)
 > **许可证**：MIT
 > **定位**：Agent之上的全链路治理与编排框架 —— 定义 Agent 怎么干活、干到什么标准、什么时候该停下来让人确认
 
