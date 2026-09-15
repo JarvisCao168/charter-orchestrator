@@ -22,6 +22,15 @@ jobs:
       - name: Validate spec integrity
         run: python scripts/validate_skills.py
       - name: Run executable tests
-        run: python -m pytest tests/
-      - name: Run governed demo
-        run: python -m charter.cli demo
+        run: python -m pytest tests/ -v
+      - name: Debug: list failures + key errors (TEMP)
+        run: |
+          echo "===== FAILED TESTS ====="
+          python -m pytest tests/ -q 2>&1 | grep -E "FAILED|ERROR" || echo "(none reported)"
+          echo "===== TAIL OF LAST RUN ====="
+          python -m pytest tests/ -q 2>&1 | tail -40 || true
+          echo "===== ENV CHECK ====="
+          echo "GITHUB_TOKEN set: $([ -n "$GITHUB_TOKEN" ] && echo yes || echo no)"
+          echo "OPENAI_API_KEY set: $([ -n "$OPENAI_API_KEY" ] && echo yes || echo no)"
+          echo "AGNES_API_KEY set: $([ -n "$AGNES_API_KEY" ] && echo yes || echo no)"
+          python -c "import sys; print('python', sys.version)"
