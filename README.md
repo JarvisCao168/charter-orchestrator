@@ -678,3 +678,32 @@ Install: `pip install charter-orchestrator` (stdlib-only core). Optional extras:
   gates publish/pull/import/audit; `s3_versioning_config` +
   `s3_cross_region_replication` emit the bucket-versioning + CRR JSON;
   `team_policies` bundles the RBAC table + versioning + CRR as one JSON.
+## v2.8 — Multi-System Linkages (Phase 5)
+
+- **Distributed judge pool on a real K8s cluster + S3 results + autoscale** —
+  `charter/judge_pool_live.py`: `LiveJudgePool.create` applies the Job
+  manifests to a live cluster (plan-only without a kubernetes client);
+  `wait_and_collect` polls the collector Job + reads the aggregate from S3;
+  `store_result_to_s3` persists it; `autoscaler_plan` emits a KEDA
+  ScaledObject + an HPA fallback.
+- **Multilingual auto-naming for memory clusters** —
+  `charter/cluster_multilingual.py`: `detect_language` (script + stopword
+  heuristic, no NLP dep) + `multilingual_name_clusters` (names each cluster
+  in its detected language via a pluggable LLM / heuristic namer).
+- **Grafana OnCall real delivery (gRPC / webhook)** —
+  `charter/oncall_deliver.py`: `OnCallClient.deliver` POSTs to OnCall's API /
+  a custom webhook / a gRPC bridge; `route_and_deliver` resolves the team and
+  delivers in one call (offline-safe payload-only without a base URL).
+- **Real k8s SPIRE node-agent bidirectional mTLS** —
+  `charter/spire_bidir_mtls.py`: `BidirMTLSConfig` +
+  `build_bidir_mtls_context` / `validate_bidir_mtls` (client + server SVIDs,
+  mutual verify-peer SPIFFE IDs) + `render_bidir_k8s_values` + the
+  two-way `attestation_exchange_plan`.
+- **PR comment LLM diff-level code completion** —
+  `charter/pr_diff_completion.py`: `complete_diff_hunks` turns a PR's hunks +
+  review comments into concrete `before`/`after` code rewrites + rationale
+  (pluggable LLM / heuristic).
+- **Checkpoint RBAC → real IAM / S3 bucket policy** —
+  `charter/checkpoint_iam.py`: `iam_policy` (per-role IAM docs) +
+  `s3_bucket_policy` (deny-default + per-role allow with team tag) +
+  `render_iam_bundle`, all JSON-ready for the AWS console / CLI.
