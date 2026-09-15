@@ -9,7 +9,7 @@ Quick start:
     from charter import init_project, advance_stage, confirm_gate, query_status
     python -m charter.cli demo
 """
-__version__ = "2.9.0"
+__version__ = "2.10.0"
 
 from .core import (
     init_project, advance_stage, confirm_gate, query_status,
@@ -229,6 +229,29 @@ from .checkpoint_iam_apply import (
     apply_iam_policies, iam_drift_report, iam_audit_report,
 )
 
+# --- v2.10 multi-system linkages (phase 7) ---
+from .judge_pool_deploy import (
+    JudgePoolDeployment, render_judge_pool_bundle,
+)
+from .memory_vector_merge import (
+    VectorMergedCluster, embed_clusters, vector_cross_merge,
+    merge_in_vector_space,
+)
+from .oncall_grpc_e2e import (
+    OnCallGRPCE2E, OnCallNotifyRequest, e2e_delivery_report,
+)
+from .spire_socket_handshake import (
+    HandshakeFrame, MockUnixSocket, BidirHandshake,
+    run_socket_handshake,
+)
+from .pr_diff_semantics import (
+    SymbolResolver, TreeSitterResolver, HeuristicResolver,
+    semantic_check, pick_symbol_resolver, semantic_consistency_report,
+)
+from .checkpoint_iam_remediate import (
+    IamRemediator, IamDriftRemediation, reconcile_iam,
+)
+
 
 __all__ = [
     # v1.1 core
@@ -332,4 +355,14 @@ __all__ = [
     "cross_file_summary",
     "IamApplier", "IamAuditLog", "apply_iam_policies", "iam_drift_report",
     "iam_audit_report",
+    # v2.10
+    "JudgePoolDeployment", "render_judge_pool_bundle",
+    "VectorMergedCluster", "embed_clusters", "vector_cross_merge",
+    "merge_in_vector_space",
+    "OnCallGRPCE2E", "OnCallNotifyRequest", "e2e_delivery_report",
+    "HandshakeFrame", "MockUnixSocket", "BidirHandshake",
+    "run_socket_handshake",
+    "SymbolResolver", "TreeSitterResolver", "HeuristicResolver",
+    "semantic_check", "pick_symbol_resolver", "semantic_consistency_report",
+    "IamRemediator", "IamDriftRemediation", "reconcile_iam",
 ]
