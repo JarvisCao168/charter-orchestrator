@@ -26,7 +26,7 @@ from charter.mcp_server import (
 
 
 def test_version_is_v3_5():
-    assert __version__.startswith("3.12")
+    assert __version__.startswith("3.13")
 
 
 # ---------------------------------------------------------------------------
@@ -34,7 +34,7 @@ def test_version_is_v3_5():
 # ---------------------------------------------------------------------------
 
 def test_tool_definitions_count():
-    assert len(TOOL_DEFINITIONS) == 20, f"expected 20 tools, got {len(TOOL_DEFINITIONS)}"
+    assert len(TOOL_DEFINITIONS) == 24, f"expected 24 tools, got {len(TOOL_DEFINITIONS)}"
 
 
 def test_tool_definitions_shape():
@@ -59,13 +59,15 @@ def test_expected_tool_names_present():
         "save_checkpoint", "restore_checkpoint", "dispatch_to_model",
         "manage_worktree", "enforce_tdd", "guardrails",
         "enable_autonomous_mode", "trace_operation", "query_trace",
+        # v3.13 governance tools
+        "validate_output", "critic_plan", "trace_span", "route_task",
     }
     assert expected == names, f"missing: {expected - names}, extra: {names - expected}"
 
 
-def test_list_mcp_tools_returns_all_20():
+def test_list_mcp_tools_returns_all_24():
     tools = list_mcp_tools()
-    assert len(tools) == 20
+    assert len(tools) == 24
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +95,7 @@ def test_run_tool_query_status():
 def test_run_tool_list_skills():
     out = run_tool("list_skills", {})
     assert out["ok"], out
-    assert out["result"]["total"] == 111, f"expected 111 skills, got {out['result']['total']}"
+    assert out["result"]["total"] == 115, f"expected 115 skills, got {out['result']['total']}"
 
 
 def test_run_tool_list_skills_category_filter():
@@ -169,7 +171,7 @@ def test_mcp_server_tools_list():
     server = CharterMCPServer()
     resp = server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
     assert resp["result"]["tools"], "tools should not be empty"
-    assert len(resp["result"]["tools"]) == 20
+    assert len(resp["result"]["tools"]) == 24
 
 
 def test_mcp_server_tools_call_init_project():
@@ -199,7 +201,7 @@ def test_mcp_server_resources_list():
     server = CharterMCPServer()
     resp = server.handle({"jsonrpc": "2.0", "id": 5, "method": "resources/list", "params": {}})
     resources = resp["result"]["resources"]
-    assert len(resources) == 112, f"expected 112 resources (111 skills + metrics), got {len(resources)}"
+    assert len(resources) == 116, f"expected 116 resources (115 skills + metrics), got {len(resources)}"
     for res in resources:
         assert res["uri"].startswith("charter://skills/") or \
                res["uri"] == "charter://metrics", f"unexpected URI: {res['uri']}"
@@ -263,7 +265,7 @@ def test_http_server_construction():
     # It wraps a CharterMCPServer and builds 112 resources (111 skills + metrics)
     assert hasattr(srv, "_server")
     resources = srv._server._resource_list
-    assert len(resources) == 112, f"expected 112 resources (111 skills + metrics), got {len(resources)}"
+    assert len(resources) == 116, f"expected 116 resources (115 skills + metrics), got {len(resources)}"
     # all URIs are well-formed
     for r in resources:
         assert r["uri"].startswith("charter://skills/") or \
@@ -273,7 +275,7 @@ def test_http_server_construction():
 def test_mcp_tools_endpoint_shape():
     from charter.mcp_server import list_mcp_tools
     tools = list_mcp_tools()
-    assert len(tools) == 20
+    assert len(tools) == 24
     names = {t["name"] for t in tools}
     assert "init_project" in names and "dispatch_to_model" in names
     # each tool has a valid JSON-serializable inputSchema
@@ -290,7 +292,7 @@ def test_new_skills_have_valid_paths():
     with open(manifest_path, encoding="utf-8") as f:
         manifest = json.load(f)
     skills = manifest["skills"]
-    assert len(skills) == 111
+    assert len(skills) == 115
     for sid, meta in skills.items():
         p = os.path.join(base, meta["path"])
         assert os.path.isfile(p), f"missing skill file: {meta['path']}"

@@ -28,7 +28,8 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 __all__ = ["TaskProfile", "ModelTier", "ModelRouter", "SemanticCache",
-           "route_task", "DEFAULT_TIERS"]
+           "route_task", "DEFAULT_TIERS",
+           "SemanticCacheBackend", "HTTPKeyValueBackend", "make_remote_backend"]
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +147,8 @@ class SemanticCache:
     def __init__(self,
                  semantic_key: Optional[Any] = None,
                  max_entries: int = 256,
-                 disk_path: Optional[str] = None) -> None:
+                 disk_path: Optional[str] = None,
+                 remote: Optional["SemanticCacheBackend"] = None) -> None:
         self._cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
         self._max_entries = max(1, int(max_entries))
         self._lock = __import__("threading").Lock()
@@ -156,6 +158,8 @@ class SemanticCache:
         # v3.12: optional SQLite disk store for cross-process persistence.
         self._db: Optional[Any] = None
         self._disk_path = disk_path
+        # v3.13: optional remote/distributed L3 backend (offline-safe)
+        self._remote = remote
         if disk_path:
             import sqlite3
             import os as _os
@@ -193,11 +197,18 @@ class SemanticCache:
         self._db.commit()
 
     def close(self) -> None:
-        """Close the disk store (no-op when persistence is disabled)."""
+        """Close the disk store and remote backend (no-ops when disabled)."""
         if self._db is not None:
             self._db.close()
             self._db = None
             self._disk_path = None
+        # v3.13: close the remote backend if attached
+        if self._remote is not None:
+            try:
+                self._remote.close()
+            except Exception:  # noqa: BLENT
+                pass
+            self._remote = None
 
     def is_persistent(self) -> bool:
         """True when an on-disk SQLite store is attached."""
@@ -229,6 +240,21 @@ class SemanticCache:
                 while len(self._cache) > self._max_entries:
                     self._cache.popitem(last=False)
             return disk_val
+        # v3.13: L1+L2 miss -> consult the remote (distributed) backend.
+        # Offline-safe: any backend error degrades to a miss, never crashes.
+        if self._remote is not None:
+            try:
+                remote_val = self._remote.get(k)
+            except Exception:  # noqa: BLENT
+                remote_val = None
+            if remote_val is not None:
+                with self._lock:
+                    self._cache[k] = {"value": remote_val, "ts": time.time()}
+                    self._cache.move_to_end(k)
+                    self.hits += 1
+                    while len(self._cache) > self._max_entries:
+                        self._cache.popitem(last=False)
+                return remote_val
         with self._lock:
             self.misses += 1
         return None
@@ -242,6 +268,12 @@ class SemanticCache:
                 self._cache.popitem(last=False)
         # v3.12: mirror to the on-disk store for cross-process persistence.
         self._disk_set(k, value)
+        # v3.13: mirror to the remote (distributed) backend; offline-safe.
+        if self._remote is not None:
+            try:
+                self._remote.put(k, value)
+            except Exception:  # noqa: BLENT
+                pass
 
     def __contains__(self, request: str) -> bool:
         return self.get(request) is not None or self._k(request) in self._peek()
@@ -256,7 +288,9 @@ class SemanticCache:
                 "hit_rate": (self.hits / (self.hits + self.misses)
                              if (self.hits + self.misses) else 0.0),
                 "disk_enabled": self.is_persistent(),
-                "disk_path": self._disk_path}
+                "disk_path": self._disk_path,
+                "remote_enabled": self._remote is not None,
+                "remote": self._remote.name() if self._remote else None}
 
     def clear(self) -> None:
         with self._lock:
@@ -268,3 +302,123 @@ class SemanticCache:
 def _default_semantic_key(request: str) -> str:
     normalized = " ".join((request or "").lower().split())
     return hashlib.blake2b(normalized.encode("utf-8"), digest_size=16).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# v3.13: distributed / remote cache backends
+# ---------------------------------------------------------------------------
+
+class SemanticCacheBackend:
+    """Protocol for pluggable SemanticCache storage layers.
+
+    A backend implements ``get(key) -> Optional[Any]`` and ``put(key, value) -> None``.
+    ``close()`` releases resources. Defaults are provided so a concrete class
+    only needs to override get/put.
+    """
+
+    def get(self, key: str) -> Optional[Any]:
+        raise NotImplementedError
+
+    def put(self, key: str, value: Any) -> None:
+        raise NotImplementedError
+
+    def close(self) -> None:
+        pass
+
+    def name(self) -> str:
+        return "backend"
+
+
+class HTTPKeyValueBackend(SemanticCacheBackend):
+    """Stdlib-only HTTP key-value store backend (JSON over HTTP).
+
+    Works against any service exposing ``GET {base}/kv/{key}`` (200 -> JSON
+    value, 404 -> miss) and ``POST {base}/kv/{key}`` with a JSON body. A
+    Redis/Postgres/Memcached gateway can implement this small surface; no
+    hard dependency is added to charter. Falls back to a miss on any network
+    error so the cache chain degrades gracefully (offline-safe / CI green).
+    """
+
+    def __init__(self, base_url: str, timeout_s: float = 2.0,
+                 api_key: Optional[str] = None) -> None:
+        self._base = base_url.rstrip("/")
+        self._timeout = float(timeout_s)
+        self._api_key = api_key
+        self._closed = False
+
+    def _headers(self) -> Dict[str, str]:
+        h = {"Content-Type": "application/json"}
+        if self._api_key:
+            h["Authorization"] = f"Bearer {self._api_key}"
+        return h
+
+    def get(self, key: str) -> Optional[Any]:
+        if self._closed:
+            return None
+        import json as _json
+        import urllib.request
+        import urllib.error
+        try:
+            req = urllib.request.Request(
+                f"{self._base}/kv/{urllib.parse.quote(str(key))}",
+                headers=self._headers(), method="GET")
+            with urllib.request.urlopen(req, timeout=self._timeout) as r:
+                body = r.read()
+            return _json.loads(body.decode("utf-8")) if body else None
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError):
+            return None  # offline-safe: miss, never crash the chain
+
+    def put(self, key: str, value: Any) -> None:
+        if self._closed:
+            return
+        import json as _json
+        import urllib.request
+        import urllib.error
+        try:
+            req = urllib.request.Request(
+                f"{self._base}/kv/{urllib.parse.quote(str(key))}",
+                data=_json.dumps(value).encode("utf-8"),
+                headers=self._headers(), method="POST")
+            with urllib.request.urlopen(req, timeout=self._timeout) as r:
+                r.read()
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError):
+            pass  # offline-safe: local layers already hold the value
+
+    def close(self) -> None:
+        self._closed = True
+
+    def name(self) -> str:
+        return f"http:{self._base}"
+
+
+def make_remote_backend(kind: str, base_url: str = "",
+                        api_key: Optional[str] = None,
+                        timeout_s: float = 2.0) -> SemanticCacheBackend:
+    """Factory for remote cache backends.
+
+    ``kind``:
+      - ``"http"`` / ``"kv"``  -> :class:`HTTPKeyValueBackend`
+      - ``"null"``            -> no-op backend (explicitly disable remote)
+    Unknown kinds raise ``ValueError``. The chosen backend is wired into
+    ``SemanticCache(remote=...)`` as the L3 (remote) tier.
+    """
+    k = (kind or "").lower()
+    if k in ("http", "kv", "redis", "postgres", "memcached"):
+        # All network KV stores are reached through the same thin HTTP surface
+        # (deploy a gateway that translates to the real store); keep one
+        # stdlib implementation, offline-safe.
+        return HTTPKeyValueBackend(base_url, timeout_s=timeout_s, api_key=api_key)
+    if k in ("null", "none", ""):
+        return _NullBackend()
+    raise ValueError(f"unknown remote backend kind: {kind!r}")
+
+
+class _NullBackend(SemanticCacheBackend):
+    def get(self, key: str) -> Optional[Any]:
+        return None
+
+    def put(self, key: str, value: Any) -> None:
+        pass
+
+    def name(self) -> str:
+        return "null"

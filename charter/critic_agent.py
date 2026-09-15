@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 __all__ = ["CriticPlan", "CriticStep", "CriticFinding", "Critic", "CriticReport",
-           "apply_repairs", "reflect_until_sound"]
+           "apply_repairs", "reflect_until_sound", "repair_and_rerun"]
 
 def apply_repairs(plan: CriticPlan, repairs: List[Dict[str, Any]]) -> CriticPlan:
     """Module-level convenience: apply ``repairs`` to ``plan`` via a default
@@ -371,3 +371,70 @@ class Critic:
         report.final_plan = current.to_dict()
         return report
 
+
+def repair_and_rerun(plan: CriticPlan,
+                     executor: Optional[Callable[[CriticStep], Dict[str, Any]]] = None,
+                     max_rounds: int = 5,
+                     critic: Optional[Critic] = None,
+                     record_history: bool = True) -> CriticReport:
+    """v3.13: full repair -> agent-rerun -> re-audit closed loop.
+
+    Unlike :func:`reflect_until_sound` (which only patches the plan in memory),
+    this drives an *agent hook*: after each repair round, ``executor`` is called
+    for every step of the patched plan to produce fresh outputs, which feed the
+    next post-audit. The loop stops when the plan is sound (or ``max_rounds``
+    reached). Returns the final :class:`CriticReport` with ``converged`` set.
+
+    Parameters
+    ----------
+    plan:
+        The task-plan DAG to audit and repair.
+    executor:
+        Optional callable ``step -> outputs_dict``. When provided, each step of
+        the repaired plan is re-executed and its result recorded as the step's
+        output before the next post-audit. When ``None``, the loop degrades to
+        :func:`reflect_until_sound` (plan-only, no agent rerun).
+    max_rounds:
+        Maximum reflect/repair/rerun iterations.
+    critic:
+        Optional :class:`Critic` instance; a default one is created otherwise.
+    record_history:
+        Keep per-round entries in ``report.history`` (default True).
+    """
+    c = critic or Critic()
+    if executor is None:
+        return c.reflect_until_sound(plan, None, max_rounds=max_rounds)
+
+    current = plan
+    outputs: Optional[Dict[str, Any]] = None
+    history: List[Dict[str, Any]] = []
+    round_no = 0
+    report = c.reflect(current, outputs)
+    while (not report.sound) and round_no < max_rounds:
+        round_no += 1
+        current = c.apply_repairs(current, report.repairs)
+        # agent rerun: execute each step of the repaired plan
+        new_outputs: Dict[str, Any] = {}
+        for step in current.steps:
+            try:
+                result = executor(step)
+                new_outputs[step.id] = result if result is not None else {}
+            except Exception as exc:  # noqa: BLENT
+                new_outputs[step.id] = {"_error": str(exc)}
+        outputs = new_outputs
+        report = c.reflect(current, outputs)
+        if record_history:
+            history.append({
+                "round": round_no,
+                "sound": report.sound,
+                "pre_findings": len(report.pre_findings),
+                "post_findings": len(report.post_findings),
+                "repairs": len(report.repairs),
+                "plan_steps": len(current.steps),
+                "rerun_steps": len(new_outputs),
+            })
+    report.rounds = round_no
+    report.history = history
+    report.converged = report.sound
+    report.final_plan = current.to_dict()
+    return report

@@ -16,14 +16,14 @@ def main():
         skill = f.read()
     # 1. Tools declared in SKILL.md
     tools = set(re.findall(r"^#### tool:\s+(\S+)", skill, re.MULTILINE))
-    if len(tools) != 20:
-        errors.append(f"SKILL.md tool count {len(tools)} != 20")
+    if len(tools) != 24:
+        errors.append(f"SKILL.md tool count {len(tools)} != 24")
     # 2. Manifest (new nested structure)
     with open(MANIFEST, encoding="utf-8") as f:
         m = json.load(f)
     skills = m.get("skills", {})
-    if len(skills) != 111:
-        errors.append(f"manifest skills {len(skills)} != 111")
+    if len(skills) != 115:
+        errors.append(f"manifest skills {len(skills)} != 115")
     if "tools" not in m or set(m["tools"]) != tools:
         errors.append("manifest tools block not in sync with SKILL.md")
     # 3. Each skill: file exists, referenced tools valid
@@ -49,7 +49,7 @@ def main():
         for e in errors:
             print("FAIL", e)
         sys.exit(1)
-    print(f"OK: 20 tools, 111 skill files, manifest structure valid, executable core present")
+    print(f"OK: {len(tools)} tools, {len(skills)} skill files, manifest structure valid, executable core present")
 
 if __name__ == "__main__":
     main()

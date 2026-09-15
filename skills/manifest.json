@@ -2,28 +2,32 @@
   "version": "3.11.0",
   "framework": "Charter Orchestrator",
   "tools": [
-    "init_project",
     "advance_stage",
     "confirm_gate",
-    "query_status",
-    "query_rule",
-    "list_skills",
-    "execute_in_sandbox",
-    "create_dropbox",
-    "manage_task_lifecycle",
-    "trigger_workflow",
     "create_chat_chain",
-    "save_checkpoint",
-    "restore_checkpoint",
+    "create_dropbox",
+    "critic_plan",
     "dispatch_to_model",
-    "manage_worktree",
-    "enforce_tdd",
-    "guardrails",
     "enable_autonomous_mode",
+    "enforce_tdd",
+    "execute_in_sandbox",
+    "guardrails",
+    "init_project",
+    "list_skills",
+    "manage_task_lifecycle",
+    "manage_worktree",
+    "query_rule",
+    "query_status",
+    "query_trace",
+    "restore_checkpoint",
+    "route_task",
+    "save_checkpoint",
     "trace_operation",
-    "query_trace"
+    "trace_span",
+    "trigger_workflow",
+    "validate_output"
   ],
-  "skill_count": 111,
+  "skill_count": 115,
   "tools_count": 20,
   "skills": {
     "env_01": {
@@ -1904,6 +1908,42 @@
         "tier",
         "model",
         "cache_hit"
+      ]
+    },
+    "gov_05": {
+      "name": "gov_05_validate_output",
+      "description": "Validate Output via ValidationGateway",
+      "category": "governance",
+      "path": "skills/governance/gov_05/SKILL.md",
+      "tools": [
+        "validate_output"
+      ]
+    },
+    "gov_06": {
+      "name": "gov_06_critic_plan",
+      "description": "Critic Plan Audit (closed-loop repair)",
+      "category": "governance",
+      "path": "skills/governance/gov_06/SKILL.md",
+      "tools": [
+        "critic_plan"
+      ]
+    },
+    "gov_07": {
+      "name": "gov_07_trace_span",
+      "description": "Semantic Span Trace + Hallucination Guard",
+      "category": "governance",
+      "path": "skills/governance/gov_07/SKILL.md",
+      "tools": [
+        "trace_span"
+      ]
+    },
+    "gov_08": {
+      "name": "gov_08_route_task",
+      "description": "Model Routing + Semantic Cache",
+      "category": "governance",
+      "path": "skills/governance/gov_08/SKILL.md",
+      "tools": [
+        "route_task"
       ]
     }
   }

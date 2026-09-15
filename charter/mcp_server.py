@@ -321,11 +321,74 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
             },
         },
     },
+
+    # -- Governance tools (21-24, v3.13) --
+    {
+        "name": "validate_output",
+        "description": "Validate an upstream agent output against a field contract "
+                       "(schema + data-alignment + consistency) via the ValidationGateway. "
+                       "Returns passed/failed + degraded flag.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "payload": {"type": "object", "description": "The output to validate"},
+                "contract": {"type": "object", "description": "Field contract: {field: {type, required, range}}"},
+                "alignment_key": {"type": "string", "description": "Field to align against upstream value"},
+                "upstream": {"type": "object", "description": "Upstream reference values for alignment check"},
+            },
+            "required": ["payload", "contract"],
+        },
+    },
+    {
+        "name": "critic_plan",
+        "description": "Audit a task-plan DAG with the Critic agent: pre-check structural "
+                       "soundness, post-audit against step outputs, and emit repair ops. "
+                       "Optional reflect_until_sound for closed-loop repair-and-recheck.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "plan": {"type": "object", "description": "Plan: {plan_id, goal, steps:[{id,name,depends_on,produces}]}"},
+                "outputs": {"type": "object", "description": "Per-step outputs for post-audit"},
+                "closed_loop": {"type": "boolean", "default": False, "description": "Run reflect_until_sound"},
+                "max_rounds": {"type": "integer", "default": 3},
+            },
+            "required": ["plan"],
+        },
+    },
+    {
+        "name": "trace_span",
+        "description": "Record a semantic input->output span with the SemanticTracer and "
+                       "return the drift score + hallucination verdict.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "span_id": {"type": "string"},
+                "input_text": {"type": "string"},
+                "output_text": {"type": "string"},
+                "threshold": {"type": "number", "default": 0.2},
+            },
+            "required": ["span_id", "input_text", "output_text"],
+        },
+    },
+    {
+        "name": "route_task",
+        "description": "Route a task profile to the optimal model tier (cheap/medium/strong) "
+                       "via the ModelRouter and optionally cache the result in the SemanticCache.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "depth": {"type": "integer", "default": 1},
+                "fan_in": {"type": "integer", "default": 1},
+                "risk": {"type": "number", "default": 0.5},
+                "tokens": {"type": "integer", "default": 500},
+                "requires_reasoning": {"type": "boolean", "default": False},
+                "use_cache": {"type": "boolean", "default": False, "description": "Also store result in SemanticCache"},
+                "cache_key": {"type": "string", "description": "Semantic cache key when use_cache"},
+            },
+        },
+    },
 ]
 
-# ---------------------------------------------------------------------------
-# Tool execution
-# ---------------------------------------------------------------------------
 
 def run_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
     """Execute a Charter tool by name. Returns {ok, result, error}."""
@@ -503,6 +566,70 @@ def run_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
             return {"ok": True, "result": observability.query_trace(
                 args.get("trace_id"), args.get("limit", 20))}
 
+        elif tool_name == "validate_output":
+            from charter import validation_gateway as _gw_mod
+            payload = args.get("payload", {})
+            contract = args.get("contract", {})
+            alignment_key = args.get("alignment_key")
+            upstream = args.get("upstream", {})
+            gw = _gw_mod.ValidationGateway(contract, alignment_key=alignment_key)
+            res = gw.check(payload, upstream=upstream)
+            return {"ok": True, "result": res.to_dict() if hasattr(res, "to_dict") else dict(res)}
+
+        elif tool_name == "critic_plan":
+            import importlib
+            _critic = importlib.import_module("charter.critic_agent")
+            plan_d = args.get("plan", {})
+            plan = _critic.CriticPlan(
+                plan_id=plan_d.get("plan_id", "mcp"),
+                goal=plan_d.get("goal", ""),
+                steps=[_critic.CriticStep(
+                    id=s.get("id", f"step_{i}"),
+                    name=s.get("name", ""),
+                    depends_on=list(s.get("depends_on", [])),
+                    produces=list(s.get("produces", [])),
+                    required=s.get("required", True),
+                ) for i, s in enumerate(plan_d.get("steps", []))])
+            outputs = args.get("outputs")
+            if args.get("closed_loop"):
+                report = _critic.reflect_until_sound(plan, outputs, max_rounds=int(args.get("max_rounds", 3)))
+            else:
+                report = _critic.Critic().reflect(plan, outputs)
+            d = report.to_dict()
+            d["plan"] = plan.to_dict()
+            return {"ok": True, "result": d}
+
+        elif tool_name == "trace_span":
+            from charter import semantic_trace as _st
+            tracer = _st.SemanticTracer(threshold=float(args.get("threshold", 0.2)))
+            span = tracer.record(args.get("span_id", "span"),
+                                 args.get("input_text", ""),
+                                 args.get("output_text", ""))
+            d = span.to_dict() if hasattr(span, "to_dict") else dict(span)
+            # convenience flag: hallucination = drift verdict
+            d.setdefault("hallucination", d.get("verdict") == "hallucination")
+            return {"ok": True, "result": d}
+
+        elif tool_name == "route_task":
+            from charter import model_router as _mr
+            profile = _mr.TaskProfile(
+                depth=int(args.get("depth", 1)),
+                fan_in=int(args.get("fan_in", 1)),
+                risk=float(args.get("risk", 0.5)),
+                tokens=int(args.get("tokens", 500)),
+                requires_reasoning=bool(args.get("requires_reasoning", False)))
+            router = _mr.ModelRouter()
+            decision = router.route(profile)
+            out = decision if isinstance(decision, dict) else {
+                "tier": getattr(decision, "tier", None),
+                "model": getattr(decision, "model", None),
+                "reasons": list(getattr(decision, "reasons", []))}
+            if args.get("use_cache") and args.get("cache_key"):
+                cache = _mr.SemanticCache()
+                cache.put(args["cache_key"], out)
+                out["cached"] = True
+            return {"ok": True, "result": out}
+
         else:
             return {"ok": False, "error": f"unknown tool: {tool_name}"}
 
@@ -546,7 +673,7 @@ def load_skill(skill_id: str) -> Dict[str, Any]:
 
 MCP_SERVER_INFO = {
     "name": "charter-orchestrator",
-    "version": "3.2.0",
+    "version": "3.13.0",
     "description": "Full-lifecycle governance & orchestration framework for AI agents. "
                    "Exposes 20 governance tools and 47 structured skills with "
                    "enforceable gates, TDD, guardrails, and human-confirmation points.",

@@ -179,6 +179,10 @@ def demo() -> int:
 def main(argv: list[str] | None = None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
     if not argv or argv[0] in ("demo", "run"):
+        # v3.13: "demo --gov" runs the governed-orchestration chain;
+        # "demo" (or "run") keeps the classic governed-run flow.
+        if len(argv) > 1 and argv[1] == "--gov":
+            return demo_governance()
         return demo()
     if argv[0] == "validate":
         import subprocess
@@ -189,5 +193,48 @@ def main(argv: list[str] | None = None) -> int:
     return 1
 
 
+
+def demo_governance() -> int:
+    """v3.13: end-to-end demo of the four governance modules + MCP gov tools."""
+    from charter import (
+        ValidationGateway, CircuitBreaker, Critic, CriticPlan, CriticStep,
+        SemanticTracer, TaskProfile, ModelRouter, SemanticCache,
+        repair_and_rerun,
+    )
+    from charter.demo_skill import _demo_governance
+
+    print("=" * 64)
+    print("Charter Orchestrator v3.13 - governance demo (--gov)")
+    print("=" * 64)
+
+    # Classic chain
+    rep = _demo_governance()
+    print("[governance] critic sound:", rep["critic"]["sound"],
+          "| gateway passed:", rep["gateway"]["passed"],
+          "| hallucination_detected:", rep["semantic_trace"]["hallucination_detected"])
+    print("[routing] easy:", rep["model_routing"]["easy"],
+          "| hard:", rep["model_routing"]["hard"])
+
+    # v3.12 closed loop + v3.13 agent-rerun loop
+    plan = CriticPlan(plan_id="gov-demo", goal="report",
+                      steps=[CriticStep(id="fetch", produces=["data"]),
+                             CriticStep(id="write", depends_on=["fetch"], produces=["report"])])
+    broken = CriticPlan(plan_id="gov-demo-broken", goal="report",
+                        steps=[CriticStep(id="a", depends_on=["b"]),
+                               CriticStep(id="b", depends_on=["a"])])
+    closed = Critic().reflect_until_sound(broken, None, max_rounds=3)
+    print("[closed-loop] converged:", closed.converged, "rounds:", closed.rounds)
+
+    calls = []
+    rerun = repair_and_rerun(
+        broken, executor=lambda step: calls.append(step.id) or {"done": True},
+        max_rounds=3)
+    print("[repair-and-rerun] converged:", rerun.converged,
+          "executor calls:", calls)
+    print("\nOK: governance demo complete (4 modules + 2 closed-loop modes)")
+    return 0
+
+
 if __name__ == "__main__":
     raise SystemExit(main())
+    main()

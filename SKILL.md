@@ -8,7 +8,7 @@ description: >
   managing project checkpoints, routing model dispatch, or auditing
   agent operations against governance rules.
 license: MIT
-version: "3.12.0"
+version: "3.13.0"
 author: JarvisCao168
 tags:
   - agent-governance
@@ -1131,4 +1131,20 @@ v1.0 为首次公开发布版本，包含以下全量能力：
 - SPIRE 双向 mTLS 接真实 node-agent socket（真实证书 + 真握手）
 - PR diff 一致性接 LSP server（跨语言真符号解析，非 tree-sitter 单语言）
 - checkpoint IAM 自动 drift 修复接真实 AWS 账号（非 mock session）
+### Governance Tools (v3.13)
 
+#### tool: validate_output
+- Validate upstream agent output against a field contract (schema + data-alignment + consistency)
+- Args: `payload`, `contract`, `alignment_key?`, `upstream?`
+
+#### tool: critic_plan
+- Audit a task-plan DAG with the Critic agent; optional closed-loop repair-and-recheck
+- Args: `plan`, `outputs?`, `closed_loop?`, `max_rounds?`
+
+#### tool: trace_span
+- Record a semantic input→output span; returns drift score + hallucination verdict
+- Args: `span_id`, `input_text`, `output_text`, `threshold?`
+
+#### tool: route_task
+- Route a task profile to the optimal model tier via ModelRouter; optional SemanticCache write
+- Args: `depth?`, `fan_in?`, `risk?`, `tokens?`, `requires_reasoning?`, `use_cache?`, `cache_key?`
