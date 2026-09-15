@@ -168,6 +168,78 @@ def _generic_demo(skill_id: str, meta: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # skill_id -> demo runner
+
+
+def _demo_governance() -> Dict[str, Any]:
+    """v3.11: end-to-end demo of the four new governance modules.
+
+    Runs a small plan through the Critic, gates its outputs through the
+    ValidationGateway (with the CircuitBreaker), traces input->output
+    semantic drift with the SemanticTracer, and routes the resulting tasks
+    to model tiers + caches them with the SemanticCache. This is the
+    "orchestration governance" chain that the multi-agent consistency
+    design analysis recommends as the foundation for multi-Agent systems.
+    """
+    from charter import (
+        ValidationGateway, CircuitBreaker, Critic, CriticPlan, CriticStep,
+        SemanticTracer, TaskProfile, ModelRouter, SemanticCache,
+    )
+
+    # 1) Plan + critic
+    plan = CriticPlan(plan_id="demo-gov", goal="industry report",
+                      steps=[
+                          CriticStep(id="fetch", name="research", produces=["data"]),
+                          CriticStep(id="analyze", name="growth", depends_on=["fetch"],
+                                     produces=["insight"]),
+                          CriticStep(id="write", name="report", depends_on=["analyze"],
+                                     produces=["report"]),
+                      ])
+    critic = Critic()
+    report = critic.reflect(plan, {"fetch": {"data": 500e9},
+                                   "analyze": {"growth": 0.10},
+                                   "write": {"report": "summary"}})
+
+    # 2) Validation gateway + circuit breaker
+    gateway = ValidationGateway({
+        "market_size": {"type": "float", "required": True},
+        "source": {"type": "str", "required": True},
+    }, alignment_key="market_size")
+    brk = CircuitBreaker(failure_threshold=3, cooldown_s=30.0)
+
+    def _producer():
+        return {"market_size": 512e9, "source": "research-agent"}
+    gated = gateway.check_with_retry(_producer, upstream={"market_size": 500e9})
+
+    # 3) Semantic trace
+    tracer = SemanticTracer(threshold=0.2, dim=128)
+    good = tracer.record("t1", "query the 2024 market size", "the 2024 market size is 500 billion")
+    bad = tracer.record("t2", "query the 2024 market size", "the weather is nice today")
+
+    # 4) Model routing + semantic cache
+    router = ModelRouter()
+    easy = TaskProfile(depth=1, fan_in=1, risk=0.1, tokens=200)
+    hard = TaskProfile(depth=8, fan_in=4, risk=0.9, tokens=3000, requires_reasoning=True)
+    r_easy = router.route(easy)
+    r_hard = router.route(hard)
+    cache = SemanticCache(max_entries=8)
+    cache.put("q1-growth-rate", 0.12)
+    cache_hit = cache.get("Q1 growth rate")  # same semantic key -> hit
+
+    return {
+        "critic": {"sound": report.sound,
+                   "pre_findings": report.pre_findings,
+                   "repairs": len(report.repairs)},
+        "gateway": {"passed": gated["_gw"]["passed"],
+                    "attempts": gated["_gw"]["attempts"],
+                    "degraded": gated["_gw"]["degraded"]},
+        "circuit_breaker": brk.snapshot(),
+        "semantic_trace": {"spans": tracer.summary(),
+                           "hallucination_detected": (bad.verdict == "hallucination")},
+        "model_routing": {"easy": r_easy, "hard": r_hard},
+        "semantic_cache": {"entries": cache.stats()["entries"],
+                           "hit_rate": cache.stats()["hit_rate"]},
+    }
+
 DEMO_SKILLS: Dict[str, Any] = {
     "obs_09": _demo_slo_oncall, "obs_10": _demo_slo_oncall, "obs_12": _demo_slo_oncall,
     "dep_05": _demo_judge_pool, "dep_06": _demo_judge_pool,
@@ -180,6 +252,8 @@ DEMO_SKILLS: Dict[str, Any] = {
     "tst_06": _demo_pr_diff, "tst_07": _demo_pr_diff, "tst_08": _demo_pr_diff,
     "dev_19": _demo_identity_iam, "dev_20": _demo_identity_iam,
     "tst_10": _demo_identity_iam, "tst_11": _demo_identity_iam,
+    "gov_01": _demo_governance, "gov_02": _demo_governance,
+    "gov_03": _demo_governance, "gov_04": _demo_governance,
 }
 
 
