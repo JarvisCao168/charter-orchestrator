@@ -8,7 +8,7 @@ description: >
   managing project checkpoints, routing model dispatch, or auditing
   agent operations against governance rules.
 license: MIT
-version: "3.1.0"
+version: "3.2.0"
 author: JarvisCao168
 tags:
   - agent-governance
@@ -64,23 +64,23 @@ charter-tools:
   - trace_operation
   - query_trace
 charter-skills:
-  total: 47
+  total: 107
   categories:
     env: 7
-    analysis: 6
-    dev: 12
-    test: 5
-    deploy: 4
-    collab: 4
-    tool: 4
-    security: 3
-    obs: 2
+    analysis: 12
+    dev: 20
+    test: 11
+    deploy: 12
+    collab: 12
+    tool: 10
+    security: 11
+    obs: 12
 mcp-server:
   module: charter.mcp_server
   protocol: "2024-11-05"
   transport: stdio
   tools: 20
-  resources: 47
+  resources: 107
 ---
 
 # Charter Orchestrator — Skill Definition
@@ -88,7 +88,7 @@ mcp-server:
 > **Skill 名称**：Charter Orchestrator
 > **Version**: 3.1.0
 > **Charter / 章程**: 智能体团队协作章程（终极完整版）
-> **Release / 发布**: 2026-09-14 v1.0.0 · 2026-09-15 v1.1.0 · 2026-09-15 v2.0.0 · 2026-09-15 v3.0.0 (full production) · 2026-09-15 v3.1.0 (MCP + official SKILL.md format)
+> **Release / 发布**: 2026-09-14 v1.0.0 · 2026-09-15 v1.1.0 · 2026-09-15 v2.0.0 · 2026-09-15 v3.0.0 (full production) · 2026-09-15 v3.1.0 (MCP + official SKILL.md format) · 2026-09-15 v3.2.0 (107 skills + MCP SSE/HTTP)
 > **许可证**：MIT
 > **定位**：Agent之上的全链路治理与编排框架 —— 定义 Agent 怎么干活、干到什么标准、什么时候该停下来让人确认
 
