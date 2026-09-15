@@ -18,7 +18,8 @@ import sys
 from typing import Any, Dict, List, Optional
 
 __all__ = ["run_demo_skill", "list_demo_skills", "DEMO_SKILLS", "run_all_demos",
-           "run_watch", "main", "_deliver_oncall", "_deliver_alertmanager"]
+           "run_watch", "main", "_deliver_oncall", "_deliver_alertmanager",
+           "_query_prometheus", "run_watch_from_promql"]
 
 # ---------------------------------------------------------------------------
 # Skill -> real-module-chain demos
@@ -416,6 +417,123 @@ def _deliver_alertmanager(alert: Dict[str, Any],
     return alert
 
 
+def _query_prometheus(base_url: str, promql: str,
+                      _query=None) -> Dict[str, Any]:
+    """Run a Prometheus instant query.
+
+    When ``_query`` is supplied it is used (test seam / authenticated
+    transport); otherwise the stdlib ``urllib`` GETs
+    ``{base_url}/api/v1/query?query=<promql>``.
+    Returns ``{"ok": bool, "status": int, "data": ..., "error": str}``.
+    """
+    if _query is not None:
+        try:
+            result = _query(base_url, promql)
+            return {"ok": result.get("status", 0) in (0, 200),
+                    "status": result.get("status", 0),
+                    "data": result.get("data"),
+                    "error": result.get("error", "")}
+        except Exception as exc:
+            return {"ok": False, "status": 0, "data": None, "error": str(exc)}
+    import urllib.request, urllib.parse as _up
+    try:
+        url = f"{base_url.rstrip('/')}/api/v1/query"
+        qs = _up.urlencode({"query": promql})
+        req = urllib.request.Request(f"{url}?{qs}",
+                                     headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            import json as _json
+            payload = _json.loads(resp.read().decode("utf-8", "replace"))
+        return {"ok": payload.get("status") == "success",
+                "status": 200 if payload.get("status") == "success" else 500,
+                "data": payload.get("data"),
+                "error": payload.get("status", "")}
+    except Exception as exc:
+        return {"ok": False, "status": 0, "data": None, "error": str(exc)}
+
+
+def run_watch_from_promql(base_url: str,
+                         promql: str,
+                         threshold_fn,
+                         iterations: int = 3,
+                         oncall_target: Optional[str] = None,
+                         oncall_integration: str = "pagerduty",
+                         alertmanager_url: Optional[str] = None,
+                         alertmanager_timeout_s: float = 5.0,
+                         _sleep_s: float = 0.0,
+                         _query=None) -> Dict[str, Any]:
+    """Watch a live Prometheus metric against an SLO threshold.
+
+    Instead of running local demo chains (as ``run_watch`` does), this
+    polls a real Prometheus endpoint with ``promql`` and evaluates the
+    result against ``threshold_fn`` (a callable that receives the query
+    result dict and returns ``(met: bool, observed: Any, message: str)``).
+    When the SLO is not met an alert is delivered to OnCall and/or
+    Alertmanager (same delivery paths as ``run_watch``).
+
+    Parameters
+    ----------
+    base_url : str
+        Prometheus base URL, e.g. ``http://localhost:9090``.
+    promql : str
+        The PromQL query to evaluate each iteration.
+    threshold_fn : callable
+        ``fn(query_result: dict) -> (met: bool, observed: Any, message: str)``.
+        ``query_result`` is the parsed Prometheus response dict
+        (``{"ok": …, "data": {"result": …}}``).
+    iterations : int
+        Number of consecutive polls.
+    """
+    iterations = max(1, int(iterations))
+    history: List[Dict[str, Any]] = []
+    alerts: List[Dict[str, Any]] = []
+    worst_observed = None
+
+    for i in range(1, iterations + 1):
+        qres = _query_prometheus(base_url, promql, _query=_query)
+        met, observed, message = threshold_fn(qres)
+        entry = {
+            "iteration": i,
+            "query_ok": qres.get("ok"),
+            "observed": observed,
+            "met": met,
+            "message": message,
+        }
+        history.append(entry)
+        if not met:
+            alert = {
+                "iteration": i,
+                "severity": "warning" if met is False else "critical",
+                "slo": "prometheus-query",
+                "observed": observed,
+                "message": f"PromQL SLO breach: {message}",
+                "failed_skills": [],  # online metric, not local skills
+            }
+            if oncall_target:
+                _deliver_oncall(alert, target=oncall_target,
+                                integration_name=oncall_integration)
+            if alertmanager_url:
+                _deliver_alertmanager(alert, url=alertmanager_url,
+                                      timeout_s=alertmanager_timeout_s)
+            alerts.append(alert)
+        if observed is not None:
+            worst_observed = observed
+        if _sleep_s and i < iterations:
+            import time as _time
+            _time.sleep(_sleep_s)
+
+    return {
+        "mode": "promql",
+        "base_url": base_url,
+        "promql": promql,
+        "iterations": iterations,
+        "history": history,
+        "alerts": alerts,
+        "worst_observed": worst_observed,
+        "slo_met": not alerts,
+    }
+
+
 def run_watch(iterations: int = 3,
               slo_pct_threshold: float = 90.0,
               as_json: bool = False,
@@ -519,7 +637,65 @@ def main(argv: List[str]) -> int:
                              "on network failure")
     parser.add_argument("--alertmanager-timeout", type=float, default=5.0,
                         help="Alertmanager webhook HTTP timeout seconds (default 5)")
+    parser.add_argument("--promql", type=str, default=None,
+                        help="watch a live Prometheus metric instead of local demo chains; "
+                             "use with --prometheus-base (and optionally --prometheus-threshold)")
+    parser.add_argument("--prometheus-base", type=str, default=None,
+                        help="Prometheus base URL for --promql mode (e.g. http://localhost:9090)")
+    parser.add_argument("--prometheus-threshold", type=float, default=None,
+                        help="numeric SLO threshold for --promql mode (the observed value "
+                             "must be <= this; a no-op when --promql is not set)")
     args = parser.parse_args(argv)
+
+    if args.promql and not args.prometheus_base:
+        print("--promql requires --prometheus-base", file=sys.stderr)
+        return 1
+
+    if args.promql:
+        # --promql mode: poll a live Prometheus metric against a numeric threshold.
+        import json as _json
+        threshold = args.prometheus_threshold  # may be None
+        def _threshold_fn(qres):
+            """Evaluate the Prometheus query result against the numeric threshold."""
+            if not qres.get("ok"):
+                return False, None, f"Prometheus query failed: {qres.get('error', 'unknown')}"
+            result = ((qres.get("data") or {}).get("result") or [{}])[0]
+            values = result.get("value") or []
+            observed = float(values[1]) if len(values) >= 2 else None
+            if observed is None:
+                return False, None, "Prometheus query returned no value"
+            if threshold is None:
+                return True, observed, f"observed={observed} (no threshold set; always met)"
+            met = observed <= threshold
+            return met, observed, f"observed={observed} threshold={threshold} met={met}"
+        report = run_watch_from_promql(
+            base_url=args.prometheus_base,
+            promql=args.promql,
+            threshold_fn=_threshold_fn,
+            iterations=args.iterations,
+            oncall_target=args.oncall_target,
+            oncall_integration=args.oncall_integration,
+            alertmanager_url=args.alertmanager_url,
+            alertmanager_timeout_s=args.alertmanager_timeout)
+        if args.json:
+            print(_json.dumps(report, ensure_ascii=False, default=str, indent=2))
+        else:
+            print(f"=== Charter PromQL watch: {report['promql']} @ {report['base_url']} ===")
+            print(f"  iterations: {report['iterations']}  slo_met: {report['slo_met']}")
+            for h in report["history"]:
+                print(f"    iter {h['iteration']}: ok={h['query_ok']} observed={h['observed']} "
+                      f"met={h['met']} {h['message']}")
+            if report["alerts"]:
+                print(f"  ALERTS ({len(report['alerts'])}):")
+                for a in report["alerts"]:
+                    am = a.get("alertmanager", {})
+                    oncall = a.get("oncall", {})
+                    extras = []
+                    if oncall: extras.append(f"oncall={'delivered' if oncall.get('delivered') else 'plan-only'}")
+                    if am: extras.append(f"alertmanager={'delivered' if am.get('delivered') else 'plan-only'}")
+                    extra_str = f" [{' | '.join(extras)}]" if extras else ""
+                    print(f"    [{a['severity'].upper()}] {a['message']}{extra_str}")
+        return 0 if report["slo_met"] else 1
 
     if args.watch:
         report = run_watch(iterations=args.iterations, slo_pct_threshold=args.slo_pct,
