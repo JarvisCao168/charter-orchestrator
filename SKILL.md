@@ -982,3 +982,20 @@ v1.0 为首次公开发布版本，包含以下全量能力：
 8. agent-skills - https://github.com/addyosmani/agent-skills
 9. Orchestrator (backnotprop) - https://github.com/backnotprop/orchestrator
 10. Superpowers - https://github.com/obra/superpowers
+
+**v2.6 已实现 / v2.6 Shipped:**
+- ✅ 多 provider 投票并发 + 结果缓存（`charter/judge_concurrency.py`，ThreadPoolExecutor + LRU/SQLite 缓存）
+- ✅ 记忆向量聚类（`charter/memory_clustering.py`，阈值式层次聚类，episode → K 个 cluster 摘要）
+- ✅ Mimir 多租户 + label 传播（`charter/mimir_multitenant.py`，tenant-scoped SLO 规则 + Grafana 数据源 provisioning）
+- ✅ 真实 k8s SPIRE Agent mTLS（`charter/spire_k8s_mtls.py`，agent config JSON + k8s values + SPIFFE env）
+- ✅ PR 评论 LLM 情感/具体性分析（`charter/pr_sentiment.py`，可插拔 LLM/heuristic，逐条 + 聚合）
+- ✅ 跨仓库 checkpoint 接团队共享存储 + 审计日志（`charter/checkpoint_shared.py`，S3/GCS/文件系统 + JSONL 审计）
+
+**v2.7 候选 / v2.7 Candidates:**
+- 并发投票接分布式 judge 池（K8s Job 多副本）
+- 记忆聚类接 LLM 聚类标签 + 自动命名
+- Mimir 接 Grafana OnCall（alert routing）
+- k8s SPIRE 接真实 node agent 的 SPIFFE socket 握手
+- PR 评论接 LLM 自动补全/改写建议
+- checkpoint 共享接 S3 版本化 + 跨 region 复制 + 团队级 RBAC
+
