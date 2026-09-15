@@ -225,11 +225,12 @@ def team_policies(team_roles: Dict[str, List[str]],
             destination_region, team_label=team_label)
     else:
         crr = {}
+    crr_desc = ("on->" + destination_bucket + "@" + destination_region
+                 if (enable_crr and destination_bucket) else "off")
     summary = (
         f"team={team} | roles={list(team_roles.keys())} | "
         f"bucket={bucket}@{source_region} | versioning=on | "
-        f"crr={'on->' + destination_bucket + '@' + destination_region
-                 if (enable_crr and destination_bucket) else 'off'}")
+        f"crr={crr_desc}")
     return {
         "rbac": json.dumps(rbac_table, indent=2, ensure_ascii=False),
         "versioning": json.dumps(versioning, indent=2),
