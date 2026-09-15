@@ -20,7 +20,8 @@ from typing import Any, Dict, List, Optional
 __all__ = ["run_demo_skill", "list_demo_skills", "DEMO_SKILLS", "run_all_demos",
            "run_watch", "main", "_deliver_oncall", "_deliver_alertmanager",
            "_query_prometheus", "run_watch_from_promql",
-           "_query_prometheus_range", "_aggregate_range_values"]
+           "_query_prometheus_range", "_aggregate_range_values",
+           "_snapshot_watch_report"]
 
 # ---------------------------------------------------------------------------
 # Skill -> real-module-chain demos
@@ -708,6 +709,53 @@ def run_watch_from_promql(base_url: str,
     return report
 
 
+def _snapshot_watch_report(report: Dict[str, Any],
+                          path: str,
+                          promql: Optional[str] = None,
+                          base_url: Optional[str] = None,
+                          metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Persist a watch report as a JSON snapshot file for audit / regression (v3.10).
+
+    The snapshot captures the full report (SLO history, alerts, delivery
+    receipts, Prometheus queries in range mode) plus optional metadata and a
+    write timestamp. Returns a receipt ``{"path", "bytes", "ok", "error"}``;
+    on write failure ``ok`` is False and the report is NOT lost (callers can
+    still print it).
+
+    This mirrors the event-sourcing "time-travel / replay" idea from the
+    multi-agent consistency design analysis: a persisted snapshot is the
+    point-in-time state a later audit or regression run can diff against.
+    """
+    import json as _json
+    import time as _time
+    snapshot = {
+        "snapshot_version": 1,
+        "written_at": _time.strftime("%Y-%m-%dT%H:%M:%S%z", _time.localtime()) or str(_time.time()),
+        "report": report,
+    }
+    if promql is not None:
+        snapshot["promql"] = promql
+    if base_url is not None:
+        snapshot["base_url"] = base_url
+    if metadata:
+        snapshot["metadata"] = metadata
+    ok = False
+    error = ""
+    try:
+        # Ensure the parent dir exists.
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(_json.dumps(snapshot, ensure_ascii=False, default=str, indent=2))
+        ok = True
+        written_bytes = os.path.getsize(path)
+    except Exception as exc:
+        error = str(exc)
+        written_bytes = 0
+    return {"path": path, "ok": ok, "bytes": written_bytes, "error": error}
+
+
 def run_watch(iterations: int = 3,
               slo_pct_threshold: float = 90.0,
               as_json: bool = False,
@@ -829,6 +877,11 @@ def main(argv: List[str]) -> int:
     parser.add_argument("--prometheus-range-agg", type=str, default="avg",
                         choices=["avg", "max", "min", "sum", "p95"],
                         help="aggregation for --prometheus-range (default avg)")
+    parser.add_argument("--snapshot", type=str, default=None,
+                        metavar="PATH",
+                        help="persist the watch report (SLO history, alerts, delivery "
+                             "receipts, Prometheus queries in range mode) to a JSON file "
+                             "for audit/regression; works with --watch and --promql")
     args = parser.parse_args(argv)
 
     if args.promql and not args.prometheus_base:
@@ -919,6 +972,14 @@ def main(argv: List[str]) -> int:
                           f"(failed: {','.join(a['failed_skills']) or 'none'}) [{delivery}]")
             print(f"  overall SLO: {'MET' if report['slo_met'] else 'BREACHED'} "
                   f"(worst ratio {report['worst_ratio']:.3f})")
+        # v3.10: optionally persist the report as a JSON snapshot for audit/regression.
+        if args.snapshot:
+            snap = _snapshot_watch_report(report, args.snapshot,
+                                          metadata={"mode": "watch",
+                                                    "iterations": report["iterations"],
+                                                    "slo_pct_threshold": report["slo_pct_threshold"]})
+            print(f"  snapshot: {'ok' if snap['ok'] else 'FAILED ' + snap['error']} "
+                  f"({snap['bytes']} bytes -> {snap['path']})")
         return 0 if report["slo_met"] else 1
 
     if args.all:
