@@ -168,16 +168,24 @@ class LLMCommentAnalyzer:
 
 
 def pick_analyzer(backend: Optional[str] = None,
-                  api_key: Optional[str] = None
+                  api_key: Optional[str] = None,
+                  prefer_offline: bool = True
                   ) -> _Analyzer:
-    """Pick an analyzer. None auto-detects: key -> llm, else heuristic."""
+    """Pick an analyzer.
+
+    Offline-first (deterministic, keeps CI green): when ``prefer_offline`` is
+    True (default) the heuristic analyzer is returned unless the caller
+    explicitly asks for the LLM backend via ``backend="llm"``. An LLM
+    analyzer is used only when ``prefer_offline`` is False AND a key is
+    present. This mirrors the multi-agent design analysis' "don't let a
+    CI-injected key silently switch to a network backend".
+    """
     backend = backend or os.environ.get("PR_COMMENT_ANALYZER")
-    if backend is None:
-        if api_key or os.environ.get("AGNES_API_KEY") or \
-           os.environ.get("OPENAI_API_KEY"):
-            backend = "llm"
-        else:
-            backend = "heuristic"
+    explicit_llm = (backend == "llm")
+    if backend is None or not explicit_llm:
+        want_llm = (not prefer_offline) and bool(api_key or os.environ.get("AGNES_API_KEY")
+                                                 or os.environ.get("OPENAI_API_KEY"))
+        backend = "llm" if want_llm else "heuristic"
     if backend == "heuristic":
         return HeuristicCommentAnalyzer()
     if backend == "llm":
