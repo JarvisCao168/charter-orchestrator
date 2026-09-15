@@ -22,6 +22,7 @@ votes; `vote_judges(...)` is the convenience entry that runs the live judges
 """
 from __future__ import annotations
 
+import math
 import statistics
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -106,7 +107,7 @@ class WeightedVotingJudge:
                      / total_w)
         wvar = sum((v.normalized()[d] - wmean_all) ** 2 * v.weight
                    for v in votes for d in JUDGE_DIMENSIONS) / total_w
-        wstd = statistics.sqrt(wvar) if wvar > 0 else 0.0
+        wstd = math.sqrt(wvar) if wvar > 0 else 0.0
         eff_agree = round(max(0.0, min(1.0, 1.0 - wstd)), 4)
 
         contributions = {v.provider: round(v.weight / total_w, 4)
