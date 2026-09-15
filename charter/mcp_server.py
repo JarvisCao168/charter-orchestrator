@@ -1,0 +1,688 @@
+"""MCP (Model Context Protocol) server for Charter Orchestrator.
+
+Exposes the 20 governance tools and 47 skills as an MCP server so that
+Claude Code, Codex, and any MCP-capable agent harness can mount Charter
+as a first-class governance layer.
+
+Protocol: JSON-RPC 2.0 over stdio (MCP 2024-11-05 / 2025-03-26 compatible).
+No external dependencies beyond the charter package itself.
+
+Usage:
+    # As an MCP server (stdio):
+    python -m charter.mcp_server
+
+    # Or in Python:
+    from charter.mcp_server import CharterMCPServer
+    server = CharterMCPServer()
+    result = server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
+"""
+from __future__ import annotations
+
+import json
+import sys
+import os
+from typing import Any, Dict, List, Optional
+
+__all__ = [
+    "CharterMCPServer",
+    "list_mcp_tools",
+    "load_skill",
+    "run_tool",
+    "main",
+]
+
+# ---------------------------------------------------------------------------
+# Tool registry: the 20 Charter tools mapped to executable handlers
+# ---------------------------------------------------------------------------
+
+TOOL_DEFINITIONS: List[Dict[str, Any]] = [
+    # -- Foundation tools (1-6) --
+    {
+        "name": "init_project",
+        "description": "Initialize a Charter-managed project with stage 0 baseline. "
+                       "Returns project_id and initial health score.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "Unique project identifier"},
+                "name": {"type": "string", "description": "Human-readable project name"},
+            },
+            "required": ["project_id"],
+        },
+    },
+    {
+        "name": "advance_stage",
+        "description": "Advance a project to the next stage. Enforces gate checks: "
+                       "requires passing TDD + guardrails + evaluation before proceeding.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "evidence": {
+                    "type": "object",
+                    "description": "Stage evidence: {test_results, guardrails_passed, eval_score}",
+                },
+            },
+            "required": ["project_id", "evidence"],
+        },
+    },
+    {
+        "name": "confirm_gate",
+        "description": "Explicitly confirm a governance gate (human-in-the-loop checkpoint). "
+                       "Required before advancing from stage 3 (open-source decision) and stage 8 (delivery).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "gate": {"type": "string", "description": "Gate name (e.g. gate_3, gate_8)"},
+                "approver": {"type": "string", "description": "Approver identity"},
+            },
+            "required": ["project_id", "gate", "approver"],
+        },
+    },
+    {
+        "name": "query_status",
+        "description": "Query current project status: stage, health, active skills, pending gates.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+            },
+            "required": ["project_id"],
+        },
+    },
+    {
+        "name": "query_rule",
+        "description": "Query a specific governance rule by category. "
+                       "Returns the rule text and enforcement level.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "description": "Rule category: role_assignment, permission_boundary, "
+                                   "communication, tdd, guardrails, autonomous_mode, "
+                                   "error_handling, documentation, versioning, "
+                                   "security, observability, evaluation, handoff",
+                },
+                "rule_id": {"type": "string", "description": "Optional specific rule ID"},
+            },
+            "required": ["category"],
+        },
+    },
+    {
+        "name": "list_skills",
+        "description": "List all 47 Charter skills by category, with their I/O contracts and "
+                       "tool dependencies. Returns manifest data.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "description": "Optional filter: env, analysis, dev, test, deploy, collab, tool, security, obs",
+                },
+            },
+        },
+    },
+    # -- Collaboration & tooling (7-11) --
+    {
+        "name": "execute_in_sandbox",
+        "description": "Execute a shell command in an isolated temp directory with "
+                       "security redline filtering (blocks rm -rf /, drop table, API key leaks).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "command": {"type": "string"},
+                "timeout": {"type": "integer", "default": 60},
+            },
+            "required": ["command"],
+        },
+    },
+    {
+        "name": "create_dropbox",
+        "description": "Create a handoff dropbox between agents with a message and metadata.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "dropbox_id": {"type": "string"},
+                "message": {"type": "string"},
+                "metadata": {"type": "object"},
+            },
+            "required": ["dropbox_id", "message"],
+        },
+    },
+    {
+        "name": "manage_task_lifecycle",
+        "description": "Manage a task through its lifecycle states (pending -> in_progress -> "
+                       "review -> done) with governance audit logging.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "action": {
+                    "type": "string",
+                    "enum": ["create", "start", "complete", "fail", "status"],
+                },
+                "details": {"type": "string"},
+            },
+            "required": ["task_id", "action"],
+        },
+    },
+    {
+        "name": "trigger_workflow",
+        "description": "Trigger a named workflow (e.g. post_pr_ci, on_failure_retry, "
+                       "delivery_checklist) with parameters.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "workflow": {"type": "string"},
+                "params": {"type": "object"},
+            },
+            "required": ["workflow"],
+        },
+    },
+    {
+        "name": "create_chat_chain",
+        "description": "Create a multi-agent chat chain for collaborative decision-making "
+                       "with role-based turn-taking.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "chain_id": {"type": "string"},
+                "roles": {"type": "array", "items": {"type": "string"}},
+                "topic": {"type": "string"},
+            },
+            "required": ["chain_id", "roles", "topic"],
+        },
+    },
+    # -- Checkpoint & model dispatch (12-14) --
+    {
+        "name": "save_checkpoint",
+        "description": "Save a named checkpoint of project state for later restoration.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "label": {"type": "string"},
+            },
+            "required": ["project_id"],
+        },
+    },
+    {
+        "name": "restore_checkpoint",
+        "description": "Restore project state from a named checkpoint.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "checkpoint_id": {"type": "string"},
+            },
+            "required": ["project_id", "checkpoint_id"],
+        },
+    },
+    {
+        "name": "dispatch_to_model",
+        "description": "Route a task to the optimal model based on complexity and type. "
+                       "Returns the recommended model and routing rationale.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_type": {
+                    "type": "string",
+                    "enum": ["coding", "planning", "review", "creative", "math", "general"],
+                },
+                "complexity": {"type": "number", "minimum": 0, "maximum": 1},
+            },
+            "required": ["task_type"],
+        },
+    },
+    # -- Worktree & TDD (15-16) --
+    {
+        "name": "manage_worktree",
+        "description": "Manage git worktrees for parallel agent development lanes.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "worktree_id": {"type": "string"},
+                "branch": {"type": "string"},
+                "action": {"type": "string", "enum": ["create", "list", "remove", "status"]},
+            },
+            "required": ["worktree_id", "action"],
+        },
+    },
+    {
+        "name": "enforce_tdd",
+        "description": "Enforce TDD red-green-refactor discipline. Validates that tests "
+                       "were written before implementation and that all tests pass.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "test_results": {
+                    "type": "object",
+                    "description": "{passed: int, failed: int, skipped: int, evidence: str}",
+                },
+            },
+            "required": ["test_results"],
+        },
+    },
+    # -- Guardrails & autonomous (17-18) --
+    {
+        "name": "guardrails",
+        "description": "Run the guardrails engine: validate input payload against "
+                       "security redlines and output filtering rules.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["validate_input", "filter_output", "audit"]},
+                "payload": {"type": "object"},
+            },
+            "required": ["action", "payload"],
+        },
+    },
+    {
+        "name": "enable_autonomous_mode",
+        "description": "Enable or disable autonomous operation for a specific scope. "
+                       "In autonomous mode, gates are auto-confirmed with audit logging.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "enabled": {"type": "boolean"},
+                "scope": {
+                    "type": "string",
+                    "description": "autonomous scope: all, dev, test, deploy, or a stage name",
+                },
+            },
+            "required": ["project_id", "enabled"],
+        },
+    },
+    # -- Tracing (19-20) --
+    {
+        "name": "trace_operation",
+        "description": "Record a trace span for an operation with attributes. "
+                       "Returns the trace_id for later querying.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "attributes": {"type": "object"},
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "query_trace",
+        "description": "Query recorded traces by trace_id or list recent operations.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "trace_id": {"type": "string"},
+                "limit": {"type": "integer", "default": 20},
+            },
+        },
+    },
+]
+
+# ---------------------------------------------------------------------------
+# Tool execution
+# ---------------------------------------------------------------------------
+
+def run_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Execute a Charter tool by name. Returns {ok, result, error}."""
+    try:
+        from charter import core, governance, tools, observability, evaluation
+
+        if tool_name == "init_project":
+            pid = args.get("project_id", "default")
+            project_type = args.get("project_type", "dev")
+            objective = args.get("objective", f"governed project {pid}")
+            out = core.init_project(pid, project_type, objective)
+            return {"ok": True, "result": out}
+
+        elif tool_name == "advance_stage":
+            pid = args["project_id"]
+            evidence = args.get("evidence", {})
+            return {"ok": True, "result": core.advance_stage(pid, evidence=evidence)}
+
+        elif tool_name == "confirm_gate":
+            pid = args["project_id"]
+            gate = args.get("gate", "gate")
+            approver = args.get("approver", "anonymous")
+            gate_type = args.get("gate_type", "stage_gate")
+            evidence = args.get("evidence", {"confirmed_by": approver})
+            return {"ok": True, "result": core.confirm_gate(pid, gate, gate_type, evidence)}
+
+        elif tool_name == "query_status":
+            pid = args["project_id"]
+            return {"ok": True, "result": core.query_status(pid)}
+
+        elif tool_name == "query_rule":
+            category = args.get("category", "")
+            rule_id = args.get("rule_id")
+            from charter.governance import RULES
+            matches = [r for r in RULES if r.get("category") == category]
+            if rule_id:
+                matches = [r for r in matches if r.get("id") == rule_id]
+            return {"ok": True, "result": {"rules": matches, "count": len(matches)}}
+
+        elif tool_name == "list_skills":
+            import json as _json
+            manifest_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "skills", "manifest.json")
+            with open(manifest_path, encoding="utf-8") as f:
+                manifest = _json.load(f)
+            skills = manifest.get("skills", {})
+            category = args.get("category")
+            if category:
+                skills = {k: v for k, v in skills.items() if v.get("category") == category}
+            return {"ok": True, "result": {
+                "total": len(skills),
+                "tools": manifest.get("tools", []),
+                "skills": skills,
+            }}
+
+        elif tool_name == "execute_in_sandbox":
+            return {"ok": True, "result": tools.execute_in_sandbox(
+                args["command"], args.get("timeout", 60))}
+
+        elif tool_name == "create_dropbox":
+            return {"ok": True, "result": tools.create_dropbox(
+                args["dropbox_id"], args["message"], args.get("metadata", {}))}
+
+        elif tool_name == "manage_task_lifecycle":
+            return {"ok": True, "result": tools.manage_task_lifecycle(
+                args["task_id"], args["action"], args.get("details", ""))}
+
+        elif tool_name == "trigger_workflow":
+            return {"ok": True, "result": tools.trigger_workflow(
+                args["workflow"], args.get("params", {}))}
+
+        elif tool_name == "create_chat_chain":
+            return {"ok": True, "result": tools.create_chat_chain(
+                args["chain_id"], args["roles"], args["topic"])}
+
+        elif tool_name == "save_checkpoint":
+            return {"ok": True, "result": core.save_checkpoint(
+                args["project_id"], args.get("label", ""))}
+
+        elif tool_name == "restore_checkpoint":
+            return {"ok": True, "result": core.restore_checkpoint(
+                args["project_id"], args["checkpoint_id"])}
+
+        elif tool_name == "dispatch_to_model":
+            task_type = args.get("task_type", "general")
+            complexity = args.get("complexity", 0.5)
+            routing = {
+                "coding": "agnes-2.5-flash" if complexity < 0.7 else "agnes-3.0",
+                "planning": "agnes-3.0",
+                "review": "agnes-2.5-flash",
+                "creative": "agnes-3.0",
+                "math": "agnes-3.0",
+                "general": "agnes-2.5-flash" if complexity < 0.5 else "agnes-3.0",
+            }
+            model = routing.get(task_type, "agnes-2.5-flash")
+            return {"ok": True, "result": {
+                "recommended_model": model,
+                "task_type": task_type,
+                "complexity": complexity,
+                "rationale": f"complexity={complexity:.1f} -> {model}",
+            }}
+
+        elif tool_name == "manage_worktree":
+            worktree_id = args["worktree_id"]
+            action = args.get("action", "status")
+            import subprocess
+            if action == "create":
+                branch = args.get("branch", f"charter/{worktree_id}")
+                r = subprocess.run(
+                    ["git", "worktree", "add", f".charter-wt-{worktree_id}",
+                     "-b", branch],
+                    capture_output=True, text=True, timeout=30)
+                return {"ok": r.returncode == 0,
+                        "result": {"worktree": f".charter-wt-{worktree_id}",
+                                   "branch": branch,
+                                   "raw": r.stdout + r.stderr}}
+            elif action == "list":
+                r = subprocess.run(
+                    ["git", "worktree", "list"],
+                    capture_output=True, text=True, timeout=10)
+                return {"ok": True, "result": {"worktrees": r.stdout.strip()}}
+            elif action == "remove":
+                r = subprocess.run(
+                    ["git", "worktree", "remove", f".charter-wt-{worktree_id}"],
+                    capture_output=True, text=True, timeout=30)
+                return {"ok": r.returncode == 0,
+                        "result": {"raw": r.stdout + r.stderr}}
+            else:
+                return {"ok": True, "result": {"status": "unknown action", "action": action}}
+
+        elif tool_name == "enforce_tdd":
+            from charter.governance import TDDEnforcer
+            enforcer = TDDEnforcer()
+            result = enforcer.check_red_green(args.get("test_results"))
+            # "pass" and "warning" are both acceptable outcomes; only "fail" is a hard stop
+            ok = result.get("status") in ("pass", "warning")
+            return {"ok": ok, "result": result}
+
+        elif tool_name == "guardrails":
+            action = args["action"]
+            payload = args.get("payload", {})
+            if action == "validate_input":
+                from charter.governance import GuardrailsEngine
+                engine = GuardrailsEngine()
+                return {"ok": True, "result": engine.validate_input(payload)}
+            elif action == "filter_output":
+                from charter.governance import GuardrailsEngine
+                engine = GuardrailsEngine()
+                return {"ok": True, "result": engine.filter_outputs(payload)}
+            else:  # audit
+                from charter.governance import GuardrailsEngine
+                engine = GuardrailsEngine()
+                return {"ok": True, "result": engine.audit(payload)}
+
+        elif tool_name == "enable_autonomous_mode":
+            pid = args["project_id"]
+            enabled = args.get("enabled", False)
+            scope = args.get("scope", "all")
+            project = core._get(pid)
+            project.autonomous_mode = enabled
+            project.autonomous_scope = scope
+            return {"ok": True, "result": {
+                "project_id": pid,
+                "autonomous_mode": enabled,
+                "scope": scope,
+                "note": "gates auto-confirmed in autonomous scope; audit trail preserved",
+            }}
+
+        elif tool_name == "trace_operation":
+            return {"ok": True, "result": observability.trace_operation(
+                args["name"], args.get("attributes"))}
+
+        elif tool_name == "query_trace":
+            return {"ok": True, "result": observability.query_trace(
+                args.get("trace_id"), args.get("limit", 20))}
+
+        else:
+            return {"ok": False, "error": f"unknown tool: {tool_name}"}
+
+    except Exception as e:
+        import traceback
+        return {"ok": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
+# ---------------------------------------------------------------------------
+# Skill loading
+# ---------------------------------------------------------------------------
+
+def load_skill(skill_id: str) -> Dict[str, Any]:
+    """Load a skill by ID (e.g. 'analysis_01'). Returns its manifest entry
+    and the full SKILL.md content."""
+    import json as _json
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    manifest_path = os.path.join(base, "skills", "manifest.json")
+    with open(manifest_path, encoding="utf-8") as f:
+        manifest = _json.load(f)
+    entry = manifest.get("skills", {}).get(skill_id)
+    if entry is None:
+        return {"found": False, "skill_id": skill_id,
+                "error": f"skill '{skill_id}' not in manifest"}
+    skill_md_path = os.path.join(base, entry.get("path", ""))
+    skill_md = ""
+    if os.path.isfile(skill_md_path):
+        with open(skill_md_path, encoding="utf-8") as f:
+            skill_md = f.read()
+    return {
+        "found": True,
+        "skill_id": skill_id,
+        "manifest": entry,
+        "content": skill_md,
+    }
+
+
+# ---------------------------------------------------------------------------
+# MCP server (JSON-RPC 2.0 over stdio)
+# ---------------------------------------------------------------------------
+
+MCP_SERVER_INFO = {
+    "name": "charter-orchestrator",
+    "version": "3.0.0",
+    "description": "Full-lifecycle governance & orchestration framework for AI agents. "
+                   "Exposes 20 governance tools and 47 structured skills with "
+                   "enforceable gates, TDD, guardrails, and human-confirmation points.",
+}
+
+
+def list_mcp_tools() -> List[Dict[str, Any]]:
+    """Return the MCP tool definitions (all 20 Charter tools)."""
+    return TOOL_DEFINITIONS
+
+
+class CharterMCPServer:
+    """MCP server implementing JSON-RPC 2.0 over stdio.
+
+    Supports:
+      - initialize
+      - tools/list
+      - tools/call
+      - resources/list  (47 skills as resources)
+      - resources/read  (skill content by ID)
+      - ping
+    """
+
+    def __init__(self) -> None:
+        self._initialized = False
+        self._resource_list: List[Dict[str, Any]] = []
+        self._build_resources()
+
+    def _build_resources(self) -> None:
+        import json as _json
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        manifest_path = os.path.join(base, "skills", "manifest.json")
+        try:
+            with open(manifest_path, encoding="utf-8") as f:
+                manifest = _json.load(f)
+            for sid, meta in manifest.get("skills", {}).items():
+                self._resource_list.append({
+                    "uri": f"charter://skills/{sid}",
+                    "name": meta.get("name", sid),
+                    "description": f"Charter skill: {meta.get('name', sid)} "
+                                    f"({meta.get('category', '?')}) — "
+                                    f"tools: {', '.join(meta.get('tools', []))}",
+                    "mimeType": "text/markdown",
+                })
+        except Exception:
+            pass
+
+    # -- JSON-RPC dispatch ------------------------------------------------
+
+    def handle(self, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        method = msg.get("method", "")
+        msg_id = msg.get("id")
+        params = msg.get("params", {})
+
+        if method == "initialize":
+            self._initialized = True
+            return self._result(msg_id, {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {
+                    "tools": {"listChanged": False},
+                    "resources": {"listChanged": False},
+                },
+                "serverInfo": MCP_SERVER_INFO,
+            })
+
+        if method == "tools/list":
+            return self._result(msg_id, {"tools": list_mcp_tools()})
+
+        if method == "tools/call":
+            tool_name = params.get("name", "")
+            args = params.get("arguments", {})
+            outcome = run_tool(tool_name, args)
+            text = json.dumps(outcome, ensure_ascii=False, default=str)
+            return self._result(msg_id, {
+                "content": [{"type": "text", "text": text}],
+                "isError": not outcome.get("ok", False),
+            })
+
+        if method == "resources/list":
+            return self._result(msg_id, {"resources": self._resource_list})
+
+        if method == "resources/read":
+            uri = params.get("uri", "")
+            if not uri.startswith("charter://skills/"):
+                return self._error(msg_id, -32602, f"unsupported URI: {uri}")
+            skill_id = uri.split("/")[-1]
+            entry = load_skill(skill_id)
+            if not entry.get("found"):
+                return self._error(msg_id, -32602, entry.get("error", "skill not found"))
+            return self._result(msg_id, {
+                "contents": [{
+                    "uri": uri,
+                    "mimeType": "text/markdown",
+                    "text": entry.get("content", ""),
+                }]
+            })
+
+        if method == "ping":
+            if msg_id is None:
+                return None  # notification: no response
+            return self._result(msg_id, {})
+
+        if msg_id is None:
+            # unknown notification — no response
+            return None
+
+        return self._error(msg_id, -32601, f"method not found: {method}")
+
+    @staticmethod
+    def _result(id_: Any, result: Any) -> Dict[str, Any]:
+        return {"jsonrpc": "2.0", "id": id_, "result": result}
+
+    @staticmethod
+    def _error(id_: Any, code: int, message: str) -> Dict[str, Any]:
+        return {"jsonrpc": "2.0", "id": id_, "error": {"code": code, "message": message}}
+
+
+def main() -> None:
+    """Run the MCP server over stdio."""
+    server = CharterMCPServer()
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            resp = CharterMCPServer._error(None, -32700, "parse error")
+            sys.stdout.write(json.dumps(resp) + "\n")
+            sys.stdout.flush()
+            continue
+        resp = server.handle(msg)
+        if resp is not None:
+            sys.stdout.write(json.dumps(resp, ensure_ascii=False) + "\n")
+            sys.stdout.flush()
+
+
+if __name__ == "__main__":
+    main()
