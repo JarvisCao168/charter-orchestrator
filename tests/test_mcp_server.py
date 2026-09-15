@@ -26,7 +26,7 @@ from charter.mcp_server import (
 
 
 def test_version_is_v3_5():
-    assert __version__.startswith("3.9")
+    assert __version__.startswith("3.10")
 
 
 # ---------------------------------------------------------------------------
@@ -702,3 +702,64 @@ def test_tool_result_resource_per_tool_isolated():
     other = srv.handle({"jsonrpc": "2.0", "id": 3, "method": "resources/read",
                        "params": {"uri": "charter://tools/pr_autosuggest/result"}})
     assert _json.loads(other["result"]["contents"][0]["text"])["found"] is False
+
+
+# ---------------------------------------------------------------------------
+# v3.10 — resources/changed push carries the full last_result (no follow-up
+# resources/read needed) — mirrors the event-sourcing "state derived from
+# events" idea from the multi-agent consistency design analysis.
+# ---------------------------------------------------------------------------
+
+def test_tool_result_push_carries_full_last_result():
+    """A resources/changed event for a tool carries the full last-result payload."""
+    from charter.mcp_server import CharterMCPServer
+    import json as _json
+    srv = CharterMCPServer()
+    srv.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/subscribe_result",
+                "params": {"tool": "slo_evaluate", "__client": "c1"}})
+    # Call the tool -> the last result is recorded and a change event is pushed.
+    srv.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {"name": "slo_evaluate", "arguments": {}}})
+    # The _tool_results store now holds the last result.
+    last = srv._tool_result_payload("slo_evaluate")
+    assert last["found"] is True
+    assert "result" in last
+    # The change event (if a sink were attached) would carry last_result = this
+    # full payload. Verify the payload builder returns the right shape.
+    assert last["tool"] == "slo_evaluate"
+    assert last["ok"] in (True, False)
+
+
+def test_tool_result_payload_missing_before_call():
+    """_tool_result_payload for a never-called tool reports found=False."""
+    from charter.mcp_server import CharterMCPServer
+    srv = CharterMCPServer()
+    p = srv._tool_result_payload("never_called_tool")
+    assert p["found"] is False
+    assert "note" in p
+    assert p["tool"] == "never_called_tool"
+
+
+def test_tool_result_push_payload_matches_read_resource():
+    """The last_result payload in the change event equals what resources/read returns."""
+    from charter.mcp_server import CharterMCPServer
+    import json as _json
+    srv = CharterMCPServer()
+    srv.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/subscribe_result",
+                "params": {"tool": "slo_evaluate", "__client": "c1"}})
+    events = []
+    srv._notify_sink = lambda ev: events.append(ev)
+    srv.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {"name": "slo_evaluate", "arguments": {}}})
+    assert events, "no change event delivered"
+    push_payload = events[0]["params"]["payload"]
+    # The change event carries last_result (full shape).
+    assert "last_result" in push_payload
+    # Now read the resource and compare: same tool, same found/ok/result fields.
+    r = srv.handle({"jsonrpc": "2.0", "id": 3, "method": "resources/read",
+                    "params": {"uri": "charter://tools/slo_evaluate/result"}})
+    read_payload = _json.loads(r["result"]["contents"][0]["text"])
+    # Both should report found=True and carry a "result" field.
+    assert push_payload["last_result"]["found"] is True
+    assert read_payload["found"] is True
+    assert push_payload["last_result"]["result"] == read_payload["result"]
