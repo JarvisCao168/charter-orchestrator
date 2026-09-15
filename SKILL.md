@@ -1007,11 +1007,20 @@ v1.0 为首次公开发布版本，包含以下全量能力：
 - ✅ PR 评论 LLM 自动补全/改写建议（`charter/pr_autosuggest.py`，rewrites/followups/action_items，可插拔 LLM/heuristic）
 - ✅ S3 版本化 + 跨 region 复制 + 团队 RBAC（`charter/checkpoint_rbac.py`，owner/admin/member/viewer 门 + 版本化/CRR JSON）
 
-**v2.8 候选 / v2.8 Candidates:**
-- 分布式 judge 池接 K8s 集群 + 结果落 S3 + 自动扩缩
-- 记忆命名接多语言（跨语言 episode 自动归并）
-- OnCall 接 Grafana OnCall gRPC API（真实 webhook 投递）
-- k8s SPIRE 接真实 node agent 的 SPIFFE socket 双向 mTLS 测试
-- PR 自动建议接 LLM 代码补全（diff 级）
-- checkpoint RBAC 接真实 IAM 策略（S3 bucket policy 生成）
+**v2.8 已实现 / v2.8 Shipped:**
+- ✅ 分布式 judge 池接真实 K8s 集群 + 结果落 S3 + 自动扩缩（`charter/judge_pool_live.py`，create/wait_and_collect/store_to_s3 + KEDA/HPA）
+- ✅ 记忆多语言自动命名（`charter/cluster_multilingual.py`，detect_language + multilingual_name_clusters，可插拔 LLM/heuristic）
+- ✅ OnCall 接 Grafana gRPC API 真实投递（`charter/oncall_deliver.py`，OnCallClient.deliver + route_and_deliver，离线安全 payload-only）
+- ✅ 真实 k8s SPIRE node-agent 双向 mTLS（`charter/spire_bidir_mtls.py`，client+server SVID + mutual verify-peer + k8s values + 握手计划）
+- ✅ PR 评论 LLM diff 级代码补全（`charter/pr_diff_completion.py`，hunks + comments → before/after 改写 + rationale，可插拔 LLM/heuristic）
+- ✅ checkpoint RBAC 生成真实 IAM/S3 bucket policy（`charter/checkpoint_iam.py`，per-role IAM + deny-default bucket policy + bundle）
+
+**v2.9 候选 / v2.9 Candidates:**
+- 分布式 judge 池接 K8s 集群自动扩缩（KEDA 多触发源 + 成本感知）
+- 记忆多语言命名接跨语言 episode 自动归并（同主题不同语言合并）
+- OnCall 接真实 Grafana gRPC channel 投递（非 plan-only）
+- k8s SPIRE 双向 mTLS 接真实 node agent socket 回归测试
+- PR diff 补全接多文件 + 跨 hunk 一致性校验
+- checkpoint IAM 接真实 AWS 账号生成 + 策略自动 apply + 审计
+
 
