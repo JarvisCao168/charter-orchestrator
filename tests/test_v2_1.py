@@ -144,10 +144,17 @@ def test_http_embedder_shaping(monkeypatch):
     assert captured["sent"]["dimensions"] == 4  # dim requested upstream
 
 
-def test_pick_embedder_no_key_raises():
+def test_pick_embedder_no_key_raises(monkeypatch):
+    """pick_embedder('openai') must raise when no OPENAI_API_KEY is available.
+
+    monkeypatch ensures this test is deterministic in any environment,
+    including CI runners that always inject GITHUB_TOKEN.
+    """
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("AGNES_API_KEY", raising=False)
     import pytest as _p
     with _p.raises(ValueError):
-        pick_embedder("openai")  # no OPENAI_API_KEY in CI
+        pick_embedder("openai")
 
 
 # ---------------------------------------------------------------------------
