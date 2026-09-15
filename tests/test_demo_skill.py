@@ -24,7 +24,7 @@ from charter.demo_skill import (
 
 
 def test_version_is_v3_5():
-    assert __version__.startswith("3.11")
+    assert __version__.startswith("3.12")
 
 
 def test_list_demo_skills_well_formed():
