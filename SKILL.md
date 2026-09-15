@@ -1023,7 +1023,7 @@ v1.0 为首次公开发布版本，包含以下全量能力：
 - ✅ PR diff 跨文件 + 跨 hunk 一致性（`charter/pr_diff_consistency.py`，unpropagated-rename/removed-def/conflicting-after 检测 + 协调 + 跨文件 blast radius）
 - ✅ checkpoint IAM 接真实 AWS 账号 + 自动 apply + 审计（`charter/checkpoint_iam_apply.py`，IamApplier.apply 创建角色/挂策略/put bucket policy + IamAuditLog + drift 报告）
 
-**v2.10 候选 / v2.10 Candidates:**
+**v3.0 候选 / v3.0 Candidates:**
 - judge 池接 K8s 集群 + 结果落 S3 + 真实 KEDA 部署（非 plan-only）
 - 跨语言归并接向量空间真归并（同主题多语言 embedding 聚类）
 - OnCall 接真实 Grafana gRPC channel（非 plan-only）端到端投递
@@ -1031,7 +1031,7 @@ v1.0 为首次公开发布版本，包含以下全量能力：
 - PR diff 一致性接 LSP / tree-sitter 真语义分析（非启发式）
 - checkpoint IAM 接真实 AWS apply + 审计 + 自动 drift 修复
 
-**v2.10 已实现 / v2.10 Shipped:**
+**v3.0 已实现 / v3.0 Shipped:**
 - ✅ judge 池真实 K8s 部署（`charter/judge_pool_deploy.py`，kubectl 可 apply 的 bundle + KEDA + S3 result-key + 部署后健康探针）
 - ✅ 跨语言归并接真向量空间（`charter/memory_vector_merge.py`，embedding 聚类 + 多语言同主题合并，非关键词表）
 - ✅ OnCall 真 gRPC 端到端（`charter/oncall_grpc_e2e.py`，channel + stub 注入 + 真 Notify 投递 + 回执）
