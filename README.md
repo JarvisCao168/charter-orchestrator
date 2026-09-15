@@ -6,7 +6,7 @@
 >
 > 定义 Agent 怎么干活、干到什么标准、什么时候该停下来让人确认
 
-[![Version](https://img.shields.io/badge/version-3.4.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
+[![Version](https://img.shields.io/badge/version-3.5.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Skill Definition](https://img.shields.io/badge/Skill-v2.1.0-green.svg)](SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
@@ -106,6 +106,18 @@ python -m charter.mcp_server     # stdio JSON-RPC
   `api_key=` 参数或 `CHARTER_MCP_API_KEY` 环境变量，网关所有 `/mcp/*` 端点；
   未配置时保持开放（向后兼容）。常数时间比较防时序泄露。
 - 348 测试（原 334 + 7 demo +4 auth +3 版本调整），3.9 / 3.11 / 3.12 全绿。
+
+
+## 📈 v3.5 — demo-skill --watch SLO 告警 + MCP /metrics
+
+- **`make demo-skill SKILL=--watch`**：`run_watch()` 持续跑 6 类 bespoke 链路，
+  按可用性 SLO（`--slo-pct`，默认 90%）评估通过率，低于阈值产生结构化告警
+  （severity + failed_skills + message）；`--iterations` 控制轮数，`--json` 出机器可读。
+- **MCP `/metrics` 端点**：Prometheus 文本格式，暴露 `charter_mcp_requests_total`
+  （method/endpoint/status 标签）、`charter_mcp_requests_by_endpoint_total`、
+  `charter_mcp_uptime_seconds`。线程安全计数；`/metrics` 无需 X-API-Key（scrapers 匿名可抓），
+  其余端点维持鉴权。
+- 352 测试（原 341 + 7 watch +4 metrics +3 版本调整），3.9 / 3.11 / 3.12 全绿。
 
 
 ## 目录 / Table of Contents
