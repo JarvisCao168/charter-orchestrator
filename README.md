@@ -6,7 +6,7 @@
 >
 > 定义 Agent 怎么干活、干到什么标准、什么时候该停下来让人确认
 
-[![Version](https://img.shields.io/badge/version-3.5.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
+[![Version](https://img.shields.io/badge/version-3.6.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Skill Definition](https://img.shields.io/badge/Skill-v2.1.0-green.svg)](SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
@@ -118,6 +118,20 @@ python -m charter.mcp_server     # stdio JSON-RPC
   `charter_mcp_uptime_seconds`。线程安全计数；`/metrics` 无需 X-API-Key（scrapers 匿名可抓），
   其余端点维持鉴权。
 - 352 测试（原 341 + 7 watch +4 metrics +3 版本调整），3.9 / 3.11 / 3.12 全绿。
+
+
+## 🔔 v3.6 — MCP 资源订阅 + SSE metrics 实时流 + watch 接 OnCall gRPC
+
+- **MCP resources 订阅**：`resources/subscribe` / `resources/unsubscribe` /
+  `resources/list_subscriptions`（按 client 隔离，线程安全）；新增 `charter://metrics`
+  资源（Prometheus 快照，HTTP 模式回读实时计数器，stdio 模式静态说明）。
+- **SSE metrics 实时流**：`/mcp/sse?stream=metrics` 每 5s 推一帧
+  `charter_mcp_requests_total` / `by_endpoint_total` / `uptime_seconds`，多行
+  data 按 SSE 规范拆分，供仪表盘实时刷新。
+- **demo-skill watch 接 OnCall**：`run_watch(oncall_target=...)` 把 SLO 告警通过
+  `oncall_grpc_e2e` 真正投递到 Grafana OnCall（gRPC）；无 `grpc` 时降级 plan-only
+  receipt，CI 仍绿。CLI：`make demo-skill SKILL=--watch --oncall-target ...`。
+- 361 测试（原 352 + 5 + 4 + 1），3.9 / 3.11 / 3.12 全绿。
 
 
 ## 目录 / Table of Contents
