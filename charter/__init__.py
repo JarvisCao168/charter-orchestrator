@@ -9,7 +9,7 @@ Quick start:
     from charter import init_project, advance_stage, confirm_gate, query_status
     python -m charter.cli demo
 """
-__version__ = "3.6.0"
+__version__ = "3.7.0"
 
 from .core import (
     init_project, advance_stage, confirm_gate, query_status,
@@ -373,4 +373,4 @@ __all__ = [
 
 from .mcp_server import CharterMCPServer, list_mcp_tools, load_skill, run_tool  # noqa: F401
 
-from .demo_skill import run_demo_skill, list_demo_skills, run_all_demos, DEMO_SKILLS  # noqa: F401
+from .demo_skill import (run_demo_skill, list_demo_skills, DEMO_SKILLS, run_all_demos, run_watch, _eval_slo, _deliver_oncall, _deliver_alertmanager)  # noqa: F401
