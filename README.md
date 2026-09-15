@@ -6,7 +6,7 @@
 >
 > 定义 Agent 怎么干活、干到什么标准、什么时候该停下来让人确认
 
-[![Version](https://img.shields.io/badge/version-3.2.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
+[![Version](https://img.shields.io/badge/version-3.3.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Skill Definition](https://img.shields.io/badge/Skill-v2.1.0-green.svg)](SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
@@ -77,6 +77,24 @@ python -m charter.mcp_server     # stdio JSON-RPC
   ```
 - `scripts/validate_skills.py` enforces the 107-skill invariant in CI.
 - 292 tests, all green on 3.9 / 3.11 / 3.12.
+
+
+## 🔬 v3.3 — Per-Skill 单元测试 + demo-skill 一键跑通
+
+- **60 个新 skill 逐个补单元测试**：`tests/test_v3_3_skills.py`，每个 skill 真正调用
+  对应 charter 模块的公开入口（不是只校验路径/类别）。55 个独立模块，覆盖
+  SLO→OnCall、Judge Pool、Memory 压缩/聚类/向量合并、mTLS/SPIFFE/SPIRE、
+  PR diff 语义、IAM/RBAC 等全部 60 个 v3.2 新增 skill。
+- **`make demo-skill SKILL=<id>` 一键跑通真实模块链路**：
+  `charter/demo_skill.py` + `Makefile`。对 28 个 skill 提供端到端 demo runner
+  （SLO→OnCall / Judge Pool K8s / Memory 全链路 / mTLS+SPIFFE / PR diff / IAM+RBAC），
+  其余 79 个走 generic import+introspection 回退。
+  ```bash
+  make demo-skill SKILL=obs_09          # SLO breach -> alert -> OnCall gRPC e2e
+  make demo-skill SKILL=dep_06 JSON=1   # 机器可读
+  make list-skill                        # 列出有 bespoke demo 的 28 个 skill
+  ```
+- 334 测试（原 260 + 60 skill + 9 demo-skill + 调整），3.9 / 3.11 / 3.12 全绿。
 
 
 ## 目录 / Table of Contents
