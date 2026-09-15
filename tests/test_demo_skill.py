@@ -24,7 +24,7 @@ from charter.demo_skill import (
 
 
 def test_version_is_v3_5():
-    assert __version__.startswith("3.10")
+    assert __version__.startswith("3.11")
 
 
 def test_list_demo_skills_well_formed():
@@ -674,3 +674,30 @@ def test_main_watch_snapshot_flag_end_to_end(tmp_path, capsys):
     assert "report" in data and "written_at" in data
     # SLO 0% always met -> exit 0
     assert rc == 0
+
+
+# ---------------------------------------------------------------------------
+# v3.11 — governance demo chain (validation gateway + critic + semantic trace + model router)
+# ---------------------------------------------------------------------------
+
+def test_demo_governance_gov_01():
+    """gov_01 runs the full governance chain end-to-end."""
+    from charter.demo_skill import run_demo_skill
+    r = run_demo_skill("gov_01")
+    assert r.get("ok") is True
+    res = r["result"]
+    for key in ("critic", "gateway", "circuit_breaker", "semantic_trace",
+                "model_routing", "semantic_cache"):
+        assert key in res, f"missing {key} in governance demo result"
+    assert res["semantic_trace"]["hallucination_detected"] is True
+    assert res["gateway"]["passed"] in (True, False)
+    assert res["model_routing"]["easy"]["tier"] in ("small", "medium", "large")
+    assert res["model_routing"]["hard"]["tier"] == "large"
+
+
+def test_demo_governance_gov_04_alias():
+    """gov_04 maps to the same governance chain."""
+    from charter.demo_skill import run_demo_skill
+    r = run_demo_skill("gov_04")
+    assert r.get("ok") is True
+    assert "critic" in r["result"]
