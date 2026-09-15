@@ -9,7 +9,7 @@ Quick start:
     from charter import init_project, advance_stage, confirm_gate, query_status
     python -m charter.cli demo
 """
-__version__ = "2.8.0"
+__version__ = "2.9.0"
 
 from .core import (
     init_project, advance_stage, confirm_gate, query_status,
@@ -205,6 +205,30 @@ from .checkpoint_iam import (
     iam_policy, s3_bucket_policy, render_iam_bundle, role_s3_actions,
 )
 
+# --- v2.9 multi-system linkages (phase 6) ---
+from .judge_pool_cost import (
+    JudgePoolAutoscaler, render_cost_autoscaler,
+)
+from .memory_cross_language import (
+    MergedCluster, detect_topic_keywords, cross_language_merge,
+    merge_cross_language,
+)
+from .oncall_grpc_deliver import (
+    OnCallGRPCClient, render_oncall_grpc_stubs,
+)
+from .spire_bidir_regression import (
+    MockNodeAgent, MockWorkload, run_bidir_mtls_regression,
+    regression_report,
+)
+from .pr_diff_consistency import (
+    Inconsistency, CrossHunkConsistency, reconcile_hunks,
+    cross_file_summary,
+)
+from .checkpoint_iam_apply import (
+    IamApplier, IamAuditLog,
+    apply_iam_policies, iam_drift_report, iam_audit_report,
+)
+
 
 __all__ = [
     # v1.1 core
@@ -297,4 +321,15 @@ __all__ = [
     "HunkProposal", "HeuristicDiffCompleter", "LLMDiffCompleter",
     "complete_diff_hunks", "pick_diff_completer",
     "iam_policy", "s3_bucket_policy", "render_iam_bundle", "role_s3_actions",
+    # v2.9
+    "JudgePoolAutoscaler", "render_cost_autoscaler",
+    "MergedCluster", "detect_topic_keywords", "cross_language_merge",
+    "merge_cross_language",
+    "OnCallGRPCClient", "render_oncall_grpc_stubs",
+    "MockNodeAgent", "MockWorkload", "run_bidir_mtls_regression",
+    "regression_report",
+    "Inconsistency", "CrossHunkConsistency", "reconcile_hunks",
+    "cross_file_summary",
+    "IamApplier", "IamAuditLog", "apply_iam_policies", "iam_drift_report",
+    "iam_audit_report",
 ]
