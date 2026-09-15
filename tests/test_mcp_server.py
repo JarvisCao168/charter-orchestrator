@@ -26,7 +26,7 @@ from charter.mcp_server import (
 
 
 def test_version_is_v3_5():
-    assert __version__.startswith("3.6")
+    assert __version__.startswith("3.7")
 
 
 # ---------------------------------------------------------------------------
@@ -488,3 +488,88 @@ def test_subscriptions_are_per_client():
                      "params": {"__client": "b"}})
     assert ra["result"]["subscriptions"] == ["charter://metrics"]
     assert rb["result"]["subscriptions"] == ["charter://skills/obs_09"]
+
+
+# ---------------------------------------------------------------------------
+# v3.7 — resources/changed push notifications (no more 5s polling)
+# ---------------------------------------------------------------------------
+
+def test_notify_resource_changed_requires_subscription():
+    """notify_resource_changed is a no-op for a client that never subscribed."""
+    from charter.mcp_server import CharterMCPServer
+    srv = CharterMCPServer()
+    # no subscription -> returns False, sink not called
+    assert srv.notify_resource_changed("charter://metrics", "ghost") is False
+
+
+def test_notify_resource_changed_pushes_to_sink():
+    """When subscribed, the sink receives a notifications/resources/updated event."""
+    from charter.mcp_server import CharterMCPServer
+    srv = CharterMCPServer()
+    srv.handle({"jsonrpc": "2.0", "id": 1, "method": "resources/subscribe",
+                "params": {"uri": "charter://metrics", "__client": "c1"}})
+    events = []
+    srv._notify_sink = lambda ev: events.append(ev)
+    ok = srv.notify_resource_changed("charter://metrics", "c1",
+                                    payload={"metrics": "charter_mcp_requests_total 3"})
+    assert ok is True
+    assert len(events) == 1
+    assert events[0]["method"] == "notifications/resources/updated"
+    assert events[0]["params"]["uri"] == "charter://metrics"
+    assert events[0]["params"]["payload"]["metrics"].startswith("charter_mcp")
+
+
+def test_http_broadcast_metrics_change_notifies_subscribers():
+    """_broadcast_metrics_change routes a fresh snapshot to subscribed SSE clients."""
+    from charter.mcp_server import HTTPMCPServer
+    import queue as _q
+    http = HTTPMCPServer()
+    # Register a fake SSE client queue + subscription keyed to it.
+    cid = "c9"
+    http._client_queues[cid] = _q.Queue()
+    http._register_client_key(cid, cid)
+    # Subscribe the client key to charter://metrics
+    http._server.handle({"jsonrpc": "2.0", "id": 1, "method": "resources/subscribe",
+                         "params": {"uri": "charter://metrics", "__client": cid}})
+    # Trigger a request -> should broadcast to the subscriber
+    http._inc_request("GET", "/mcp/health", 200)
+    q = http._client_queues[cid]
+    assert not q.empty(), "expected a metrics change notification to be pushed"
+    import json as _json
+    evt = _json.loads(q.get_nowait())
+    assert evt["method"] == "notifications/resources/updated"
+    assert "charter_mcp_requests_total" in evt["params"]["payload"]["metrics"]
+
+
+def test_http_broadcast_no_subscribers_is_zero():
+    """With no subscribers, _broadcast_metrics_change notifies zero clients."""
+    from charter.mcp_server import HTTPMCPServer
+    http = HTTPMCPServer()
+    http._inc_request("GET", "/mcp/health", 200)  # no subscriber -> 0
+    assert http._broadcast_metrics_change() == 0
+
+
+def test_unsubscribed_client_gets_no_push():
+    """After unsubscribe, a metrics change does not push to that client."""
+    from charter.mcp_server import HTTPMCPServer
+    import queue as _q, json as _json
+    http = HTTPMCPServer()
+    cid = "c10"
+    http._client_queues[cid] = _q.Queue()
+    http._register_client_key(cid, cid)
+    http._server.handle({"jsonrpc": "2.0", "id": 1, "method": "resources/subscribe",
+                         "params": {"uri": "charter://metrics", "__client": cid}})
+    http._server.handle({"jsonrpc": "2.0", "id": 2, "method": "resources/unsubscribe",
+                         "params": {"uri": "charter://metrics", "__client": cid}})
+    http._inc_request("GET", "/mcp/health", 200)
+    assert http._client_queues[cid].empty(), "no push expected after unsubscribe"
+
+
+def test_metrics_stream_is_event_driven_not_polling():
+    """/mcp/sse?stream=metrics now blocks on the queue (push) instead of sleeping 5s."""
+    import inspect
+    from charter.mcp_server import HTTPMCPServer
+    src = inspect.getsource(HTTPMCPServer._make_handler)
+    # The 5s polling sleep is gone; the stream waits on the client queue.
+    assert "_time.sleep(5)" not in src, "still polling every 5s"
+    assert "q.get(timeout=30)" in src, "event-driven queue wait missing"
