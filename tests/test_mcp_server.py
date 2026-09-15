@@ -26,7 +26,7 @@ from charter.mcp_server import (
 
 
 def test_version_is_v3_5():
-    assert __version__.startswith("3.5")
+    assert __version__.startswith("3.6")
 
 
 # ---------------------------------------------------------------------------
@@ -199,10 +199,11 @@ def test_mcp_server_resources_list():
     server = CharterMCPServer()
     resp = server.handle({"jsonrpc": "2.0", "id": 5, "method": "resources/list", "params": {}})
     resources = resp["result"]["resources"]
-    assert len(resources) == 107, f"expected 107 skill resources, got {len(resources)}"
+    assert len(resources) == 108, f"expected 108 resources (107 skills + metrics), got {len(resources)}"
     for res in resources:
-        assert res["uri"].startswith("charter://skills/")
-        assert res["mimeType"] == "text/markdown"
+        assert res["uri"].startswith("charter://skills/") or \
+               res["uri"] == "charter://metrics", f"unexpected URI: {res['uri']}"
+        assert res["mimeType"] in ("text/markdown", "text/plain; version=0.0.4")
 
 
 def test_mcp_server_resources_read():
@@ -259,13 +260,14 @@ def test_http_mcp_server_importable():
 def test_http_server_construction():
     from charter.mcp_server import HTTPMCPServer
     srv = HTTPMCPServer(host="127.0.0.1", port=8799)
-    # It wraps a CharterMCPServer and builds 107 resources
+    # It wraps a CharterMCPServer and builds 108 resources (107 skills + metrics)
     assert hasattr(srv, "_server")
     resources = srv._server._resource_list
-    assert len(resources) == 107, f"expected 107 resources, got {len(resources)}"
+    assert len(resources) == 108, f"expected 108 resources (107 skills + metrics), got {len(resources)}"
     # all URIs are well-formed
     for r in resources:
-        assert r["uri"].startswith("charter://skills/")
+        assert r["uri"].startswith("charter://skills/") or \
+               r["uri"] == "charter://metrics", f"unexpected URI: {r['uri']}"
 
 
 def test_mcp_tools_endpoint_shape():
@@ -410,3 +412,79 @@ def test_metrics_endpoint_is_open_no_auth():
     import io
     # just verify the payload generator works without auth
     assert "charter_mcp_uptime_seconds" in srv._metrics_payload()["text"]
+
+
+# ---------------------------------------------------------------------------
+# v3.6 — resources/subscribe + /mcp/sse?stream=metrics live push
+# ---------------------------------------------------------------------------
+
+def test_resources_subscribe_round_trip():
+    """resources/subscribe records a URI; list_subscriptions reflects it."""
+    from charter.mcp_server import CharterMCPServer
+    srv = CharterMCPServer()
+    r = srv.handle({"jsonrpc": "2.0", "id": 1, "method": "resources/subscribe",
+                    "params": {"uri": "charter://metrics", "__client": "c1"}})
+    assert r["result"]["subscribed"] is True
+    r2 = srv.handle({"jsonrpc": "2.0", "id": 2, "method": "resources/list_subscriptions",
+                     "params": {"__client": "c1"}})
+    assert "charter://metrics" in r2["result"]["subscriptions"]
+    r3 = srv.handle({"jsonrpc": "2.0", "id": 3, "method": "resources/unsubscribe",
+                     "params": {"uri": "charter://metrics", "__client": "c1"}})
+    assert r3["result"]["subscribed"] is False
+    r4 = srv.handle({"jsonrpc": "2.0", "id": 4, "method": "resources/list_subscriptions",
+                     "params": {"__client": "c1"}})
+    assert r4["result"]["subscriptions"] == []
+
+
+def test_metrics_resource_readable():
+    """resources/read on charter://metrics returns Prometheus-format text."""
+    from charter.mcp_server import CharterMCPServer
+    srv = CharterMCPServer()
+    r = srv.handle({"jsonrpc": "2.0", "id": 1, "method": "resources/read",
+                    "params": {"uri": "charter://metrics"}})
+    assert "contents" in r["result"]
+    text = r["result"]["contents"][0]["text"]
+    assert "charter_mcp" in text or "stdio" in text
+    assert r["result"]["contents"][0]["mimeType"] == "text/plain; version=0.0.4"
+
+
+def test_metrics_resource_in_http_mode_exposes_counters():
+    """When the server is owned by HTTPMCPServer, the metrics resource shows live counters."""
+    from charter.mcp_server import HTTPMCPServer, CharterMCPServer
+    http = HTTPMCPServer()
+    # Simulate some requests on the owner
+    http._inc_request("GET", "/mcp/health", 200)
+    http._inc_request("POST", "/mcp/message", 202)
+    # The CharterMCPServer inside http should now expose those counters
+    r = http._server.handle({"jsonrpc": "2.0", "id": 1, "method": "resources/read",
+                             "params": {"uri": "charter://metrics"}})
+    text = r["result"]["contents"][0]["text"]
+    assert 'endpoint="/mcp/health"' in text
+    assert 'endpoint="/mcp/message"' in text
+
+
+def test_sse_metrics_stream_is_routed():
+    """/mcp/sse?stream=metrics selects the metrics push loop (verify by source)."""
+    import inspect
+    from charter.mcp_server import HTTPMCPServer
+    src = inspect.getsource(HTTPMCPServer._make_handler)
+    # The handler code references the metrics stream mode
+    assert "stream" in src and "metrics" in src
+    # The /mcp/sse route must still be registered in do_GET
+    assert "/mcp/sse" in src
+
+
+def test_subscriptions_are_per_client():
+    """Different client keys get independent subscription sets."""
+    from charter.mcp_server import CharterMCPServer
+    srv = CharterMCPServer()
+    srv.handle({"jsonrpc": "2.0", "id": 1, "method": "resources/subscribe",
+                "params": {"uri": "charter://metrics", "__client": "a"}})
+    srv.handle({"jsonrpc": "2.0", "id": 2, "method": "resources/subscribe",
+                "params": {"uri": "charter://skills/obs_09", "__client": "b"}})
+    ra = srv.handle({"jsonrpc": "2.0", "id": 3, "method": "resources/list_subscriptions",
+                     "params": {"__client": "a"}})
+    rb = srv.handle({"jsonrpc": "2.0", "id": 4, "method": "resources/list_subscriptions",
+                     "params": {"__client": "b"}})
+    assert ra["result"]["subscriptions"] == ["charter://metrics"]
+    assert rb["result"]["subscriptions"] == ["charter://skills/obs_09"]
