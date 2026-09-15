@@ -8,6 +8,7 @@ Covers:
 - main() --list and --json paths exit cleanly
 """
 import os
+import json
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -23,7 +24,7 @@ from charter.demo_skill import (
 
 
 def test_version_is_v3_5():
-    assert __version__.startswith("3.9")
+    assert __version__.startswith("3.10")
 
 
 def test_list_demo_skills_well_formed():
@@ -589,3 +590,87 @@ def test_run_watch_from_promql_range_query_failure():
     assert report["slo_met"] is False
     assert len(report["alerts"]) == 1
     assert "range down" in report["alerts"][0]["message"]
+
+
+# ---------------------------------------------------------------------------
+# v3.10 — demo-skill watch --snapshot: persist the report as a JSON file for
+# audit / regression (mirrors the event-sourcing "time-travel / replay" idea
+# from the multi-agent consistency design analysis)
+# ---------------------------------------------------------------------------
+
+def test_snapshot_watch_report_writes_json(tmp_path):
+    """_snapshot_watch_report writes a valid JSON file with the full report."""
+    from charter.demo_skill import _snapshot_watch_report
+    report = {"iterations": 3, "slo_pct_threshold": 90.0,
+              "history": [{"iteration": 1, "passed": 6, "total_skills": 6,
+                           "slo": {"ratio": 1.0, "met": True}}],
+              "alerts": [], "worst_ratio": 1.0, "slo_met": True, "mode": "watch"}
+    path = str(tmp_path / "snap.json")
+    receipt = _snapshot_watch_report(report, path, metadata={"mode": "watch"})
+    assert receipt["ok"] is True
+    assert os.path.exists(path)
+    data = json.loads(open(path, encoding="utf-8").read())
+    assert data["report"] == report
+    assert data["snapshot_version"] == 1
+    assert "written_at" in data
+    assert data["metadata"] == {"mode": "watch"}
+
+
+def test_snapshot_watch_report_includes_promql(tmp_path):
+    """In promql mode, the snapshot carries the promql + base_url fields."""
+    from charter.demo_skill import _snapshot_watch_report
+    report = {"iterations": 1, "mode": "promql", "slo_met": False,
+              "alerts": [{"iteration": 1, "message": "breach", "severity": "critical"}],
+              "history": []}
+    path = str(tmp_path / "q.json")
+    receipt = _snapshot_watch_report(report, path, promql="error_rate",
+                                     base_url="http://prom:9090")
+    assert receipt["ok"] is True
+    data = json.loads(open(path, encoding="utf-8").read())
+    assert data["promql"] == "error_rate"
+    assert data["base_url"] == "http://prom:9090"
+    assert data["report"]["slo_met"] is False
+
+
+def test_snapshot_watch_report_failure_does_not_raise(tmp_path):
+    """A bad path (e.g. unwritable dir) yields ok=False with an error, no raise."""
+    from charter.demo_skill import _snapshot_watch_report
+    # Use a path whose parent dir cannot be created (root-level on Windows would
+    # be C:\.. — instead simulate by giving a path under a forbidden segment).
+    # Create a regular file and use it as the "parent" directory prefix.
+    # os.makedirs(parent, exist_ok=True) will raise NotADirectoryError.
+    import os as _os
+    a_file = str(tmp_path / "afile")
+    _os.makedirs(tmp_path / "afile") if False else None  # no-op
+    with open(a_file, "w") as _f:
+        _f.write("")
+    target = a_file + "/snap.json"  # parent (a_file) is a regular file -> makedirs fails
+    receipt = _snapshot_watch_report({"iterations": 1}, target)
+    assert receipt["ok"] is False
+    assert receipt["error"], "expected an error message on write failure"
+    # The receipt still reports the path + 0 bytes.
+    assert receipt["bytes"] == 0
+
+
+def test_snapshot_creates_parent_dir(tmp_path):
+    """_snapshot_watch_report creates missing parent directories."""
+    from charter.demo_skill import _snapshot_watch_report
+    deep = tmp_path / "a" / "b" / "c" / "snap.json"
+    receipt = _snapshot_watch_report({"iterations": 1}, str(deep))
+    assert receipt["ok"] is True
+    assert os.path.exists(str(deep))
+    data = json.loads(open(str(deep), encoding="utf-8").read())
+    assert data["report"]["iterations"] == 1
+
+
+def test_main_watch_snapshot_flag_end_to_end(tmp_path, capsys):
+    """main(['--watch', '--iterations','1', '--snapshot', ...]) persists a report."""
+    import charter.demo_skill as ds
+    path = str(tmp_path / "watch_report.json")
+    rc = ds.main(["--watch", "--iterations", "1", "--slo-pct", "0", "--snapshot", path])
+    assert os.path.exists(path), "snapshot file was not written"
+    data = json.loads(open(path, encoding="utf-8").read())
+    assert "mode" in data.get("metadata", {})  # watch mode metadata
+    assert "report" in data and "written_at" in data
+    # SLO 0% always met -> exit 0
+    assert rc == 0
