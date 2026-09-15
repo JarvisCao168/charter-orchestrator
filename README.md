@@ -645,3 +645,36 @@ Install: `pip install charter-orchestrator` (stdlib-only core). Optional extras:
   dir), writes every op to an append-only JSONL `AuditLog`;
   `publish_to_team` / `pull_from_team` / `audit_report` are the one-shot
   wrappers.
+## v2.7 — Multi-System Linkages (Phase 4)
+
+- **Distributed judge pool (K8s Job multi-replica)** — `charter/judge_pool.py`:
+  `plan_judge_pool` builds N per-provider K8s Job replicas + a collector Job;
+  `DistributedJudgePool.aggregate` groups replica votes per provider so a
+  provider with 3 replicas doesn't triple its weight; `render_pool_manifests`
+  emits the Job/ConfigMap/collector docs as JSON (offline-safe plan-only
+  without a k8s client).
+- **Memory LLM auto-naming** — `charter/cluster_naming.py`:
+  `name_clusters` asks a pluggable LLM (or a deterministic
+  `HeuristicClusterNamer` when no key) for a 1-3 word name + one-line
+  description per cluster; `named_cluster_report` clusters + names a
+  session's episodes and stores the *named* summaries back.
+- **Mimir → Grafana OnCall alert routing** — `charter/oncall_routing.py`:
+  `oncall_integrations` + `oncall_route_policy` map
+  `{tenant, severity, alertname}` → a team's OnCall integration
+  (Slack / PagerDuty / webhook) with per-severity escalation windows;
+  `oncall_provisioning_bundle` emits the full routing config as JSON.
+- **Real k8s SPIRE node-agent socket handshake** —
+  `charter/spire_node_handshake.py`:
+  `render_workload_socket_manifests` wires the node agent's socket into a
+  pod (emptyDir + env + postStart ping); `validate_workload_socket` checks
+  socket/bundle path consistency + DNS-safe trust domain; `handshake_plan`
+  documents the connect→attest→fetch→verify→mTLS step sequence.
+- **PR comment LLM auto-completion / rewrite** — `charter/pr_autosuggest.py`:
+  `pr_autosuggest` + `autosuggest_pr_comments` propose concrete rewrites,
+  follow-ups, and action items for vague / negative / actionable comments
+  (LLM when a key is set, `HeuristicSuggester` otherwise).
+- **S3 versioning + cross-region replication + team RBAC** —
+  `charter/checkpoint_rbac.py`: `TeamRBAC` (owner/admin/member/viewer)
+  gates publish/pull/import/audit; `s3_versioning_config` +
+  `s3_cross_region_replication` emit the bucket-versioning + CRR JSON;
+  `team_policies` bundles the RBAC table + versioning + CRR as one JSON.
