@@ -617,3 +617,31 @@ Install: `pip install charter-orchestrator` (stdlib-only core). Optional extras:
   `charter/cross_repo.py`: a file-backed `~/.charter/checkpoints/` exchange;
   `publish_checkpoint` / `pull_checkpoint` / `list_published` /
   `import_into_core` so agents in different repos share governance state.
+## v2.6 — Multi-System Linkages (Phase 3)
+
+- **Concurrent judge voting + result cache** — `charter/judge_concurrency.py`:
+  `vote_judges_concurrent` runs N provider judges on a thread pool;
+  `JudgeResultCache` + `cached_vote` make repeated votes O(1).
+- **Memory vector clustering** — `charter/memory_clustering.py`:
+  threshold-based agglomerative clustering over embedded episodes;
+  `cluster_session` collapses a session's raw episodes into K cluster
+  summaries (K << N).
+- **Mimir multi-tenant + label propagation** —
+  `charter/mimir_multitenant.py`: per-project Mimir tenants, tenant-scoped
+  SLO rules with propagated labels, Mimir distributor label-propagation
+  config, Grafana Mimir/Loki/Tempo data sources — all as provisioning JSON.
+- **Real k8s SPIRE Agent mTLS** — `charter/spire_k8s_mtls.py`:
+  `render_spire_agent_config` (the JSON a real `spire-agent` reads),
+  `render_agent_values` (k8s volumes + projected SA token + env),
+  `mtls_env` (SPIFFE_ENDPOINT_SOCKET / SPIFFE_TLS_* flags).
+- **PR comment LLM sentiment / specificity** — `charter/pr_sentiment.py`:
+  `analyze_pr_comments` pulls a PR's review + issue comments and runs a
+  pluggable LLM (or offline heuristic) sentiment / specificity / actionability
+  analyzer; returns per-comment + aggregate `{avg_sentiment, avg_specificity,
+  n_actionable, themes}`.
+- **Team shared checkpoint storage (S3/GCS) + audit log** —
+  `charter/checkpoint_shared.py`: `SharedCheckpointStore` publishes / pulls
+  checkpoints to filesystem / S3 / GCS (auto-detects SDKs, degrades to local
+  dir), writes every op to an append-only JSONL `AuditLog`;
+  `publish_to_team` / `pull_from_team` / `audit_report` are the one-shot
+  wrappers.
