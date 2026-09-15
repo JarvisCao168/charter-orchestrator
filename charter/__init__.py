@@ -257,7 +257,7 @@ __all__ = [
     # v3.1 MCP
     "CharterMCPServer", "list_mcp_tools", "load_skill", "run_tool",
     # v3.3 demo-skill
-    "run_demo_skill", "list_demo_skills", "DEMO_SKILLS",
+    "run_demo_skill", "list_demo_skills", "DEMO_SKILLS", "run_all_demos",
     # v1.1 core
     "init_project", "advance_stage", "confirm_gate", "query_status",
     "save_checkpoint", "restore_checkpoint",
@@ -373,4 +373,4 @@ __all__ = [
 
 from .mcp_server import CharterMCPServer, list_mcp_tools, load_skill, run_tool  # noqa: F401
 
-from .demo_skill import run_demo_skill, list_demo_skills, DEMO_SKILLS  # noqa: F401
+from .demo_skill import run_demo_skill, list_demo_skills, run_all_demos, DEMO_SKILLS  # noqa: F401
