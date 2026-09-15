@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
+  "version": "3.2.0",
   "framework": "Charter Orchestrator",
   "tools": [
     "init_project",
@@ -23,7 +23,7 @@
     "trace_operation",
     "query_trace"
   ],
-  "skill_count": 47,
+  "skill_count": 107,
   "tools_count": 20,
   "skills": {
     "env_01": {
@@ -824,6 +824,1030 @@
         "observability_report",
         "anomalies"
       ]
+    },
+    "sec_01": {
+      "name": "X509 PKI Identity",
+      "category": "security",
+      "tools": [
+        "trace_operation",
+        "query_trace",
+        "guardrails"
+      ],
+      "path": "skills/security/sec_01/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.x509_identity"
+    },
+    "sec_02": {
+      "name": "SPIFFE Trust Domain",
+      "category": "security",
+      "tools": [
+        "trace_operation",
+        "query_trace",
+        "guardrails"
+      ],
+      "path": "skills/security/sec_02/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.spiffe"
+    },
+    "sec_03": {
+      "name": "SVID Issuance & Verification",
+      "category": "security",
+      "tools": [
+        "trace_operation",
+        "query_trace",
+        "guardrails"
+      ],
+      "path": "skills/security/sec_03/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.spiffe"
+    },
+    "sec_04": {
+      "name": "Attestation Request/Verify",
+      "category": "security",
+      "tools": [
+        "trace_operation",
+        "query_trace",
+        "guardrails"
+      ],
+      "path": "skills/security/sec_04/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.spiffe_attestation"
+    },
+    "sec_05": {
+      "name": "mTLS Trust Anchor",
+      "category": "security",
+      "tools": [
+        "trace_operation",
+        "query_trace",
+        "guardrails"
+      ],
+      "path": "skills/security/sec_05/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.mtls"
+    },
+    "sec_06": {
+      "name": "Bidirectional mTLS Context",
+      "category": "security",
+      "tools": [
+        "trace_operation",
+        "query_trace",
+        "guardrails"
+      ],
+      "path": "skills/security/sec_06/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.spire_bidir_mtls"
+    },
+    "sec_07": {
+      "name": "K8s SPIRE Node Socket Handshake",
+      "category": "security",
+      "tools": [
+        "trace_operation",
+        "query_trace",
+        "guardrails"
+      ],
+      "path": "skills/security/sec_07/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.spire_node_handshake"
+    },
+    "sec_08": {
+      "name": "Socket-Pair SVID Exchange",
+      "category": "security",
+      "tools": [
+        "trace_operation",
+        "query_trace",
+        "guardrails"
+      ],
+      "path": "skills/security/sec_08/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.spire_socket_handshake"
+    },
+    "obs_03": {
+      "name": "OTel Export to Jaeger",
+      "category": "obs",
+      "tools": [
+        "trace_operation",
+        "query_trace"
+      ],
+      "path": "skills/obs/obs_03/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.otel_export"
+    },
+    "obs_04": {
+      "name": "Trace Link & Jaeger Query",
+      "category": "obs",
+      "tools": [
+        "trace_operation",
+        "query_trace"
+      ],
+      "path": "skills/obs/obs_04/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.trace_link"
+    },
+    "obs_05": {
+      "name": "Tempo Push & Aggregate",
+      "category": "obs",
+      "tools": [
+        "trace_operation",
+        "query_trace"
+      ],
+      "path": "skills/obs/obs_05/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.trace_link"
+    },
+    "obs_06": {
+      "name": "Grafana Dashboard Provision",
+      "category": "obs",
+      "tools": [
+        "trace_operation",
+        "query_trace",
+        "trigger_workflow"
+      ],
+      "path": "skills/obs/obs_06/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.grafana"
+    },
+    "obs_07": {
+      "name": "Prometheus Alert Rules",
+      "category": "obs",
+      "tools": [
+        "trace_operation",
+        "query_trace",
+        "trigger_workflow"
+      ],
+      "path": "skills/obs/obs_07/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.prometheus_rules"
+    },
+    "obs_08": {
+      "name": "Mimir Multi-Tenant Config",
+      "category": "obs",
+      "tools": [
+        "trace_operation",
+        "query_trace",
+        "trigger_workflow"
+      ],
+      "path": "skills/obs/obs_08/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.mimir_multitenant"
+    },
+    "obs_09": {
+      "name": "SLO Alert Gate & Payload",
+      "category": "obs",
+      "tools": [
+        "trace_operation",
+        "trigger_workflow",
+        "query_status"
+      ],
+      "path": "skills/obs/obs_09/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.slo_alerts"
+    },
+    "obs_10": {
+      "name": "AlertManager / PagerDuty Fire",
+      "category": "obs",
+      "tools": [
+        "trace_operation",
+        "trigger_workflow",
+        "query_status"
+      ],
+      "path": "skills/obs/obs_10/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.slo_alerts"
+    },
+    "obs_11": {
+      "name": "OnCall Routing Policy",
+      "category": "obs",
+      "tools": [
+        "trace_operation",
+        "trigger_workflow",
+        "create_dropbox"
+      ],
+      "path": "skills/obs/obs_11/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.oncall_routing"
+    },
+    "obs_12": {
+      "name": "OnCall gRPC E2E Delivery",
+      "category": "obs",
+      "tools": [
+        "trace_operation",
+        "trigger_workflow",
+        "create_dropbox"
+      ],
+      "path": "skills/obs/obs_12/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.oncall_grpc_e2e"
+    },
+    "dep_05": {
+      "name": "Judge Pool K8s Plan",
+      "category": "deploy",
+      "tools": [
+        "dispatch_to_model",
+        "trigger_workflow",
+        "query_status"
+      ],
+      "path": "skills/deploy/dep_05/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.judge_pool"
+    },
+    "dep_06": {
+      "name": "Judge Pool Cost Autoscaler",
+      "category": "deploy",
+      "tools": [
+        "dispatch_to_model",
+        "trigger_workflow",
+        "query_status"
+      ],
+      "path": "skills/deploy/dep_06/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.judge_pool_cost"
+    },
+    "dep_07": {
+      "name": "Judge Pool Live + S3",
+      "category": "deploy",
+      "tools": [
+        "dispatch_to_model",
+        "trigger_workflow",
+        "query_status"
+      ],
+      "path": "skills/deploy/dep_07/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.judge_pool_live"
+    },
+    "dep_08": {
+      "name": "Judge Pool K8s Deploy",
+      "category": "deploy",
+      "tools": [
+        "dispatch_to_model",
+        "trigger_workflow",
+        "query_status"
+      ],
+      "path": "skills/deploy/dep_08/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.judge_pool_deploy"
+    },
+    "dep_09": {
+      "name": "Template PR Bot",
+      "category": "deploy",
+      "tools": [
+        "manage_task_lifecycle",
+        "trigger_workflow",
+        "create_dropbox"
+      ],
+      "path": "skills/deploy/dep_09/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.github_pr"
+    },
+    "dep_10": {
+      "name": "Template PR + CI Gate",
+      "category": "deploy",
+      "tools": [
+        "manage_task_lifecycle",
+        "trigger_workflow",
+        "create_dropbox"
+      ],
+      "path": "skills/deploy/dep_10/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.pr_community"
+    },
+    "dep_11": {
+      "name": "Checkpoint S3 + Audit",
+      "category": "deploy",
+      "tools": [
+        "manage_task_lifecycle",
+        "trigger_workflow",
+        "create_dropbox"
+      ],
+      "path": "skills/deploy/dep_11/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.checkpoint_shared"
+    },
+    "dep_12": {
+      "name": "Cross-Repo Checkpoint Bus",
+      "category": "deploy",
+      "tools": [
+        "manage_task_lifecycle",
+        "trigger_workflow",
+        "create_dropbox"
+      ],
+      "path": "skills/deploy/dep_12/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.cross_repo"
+    },
+    "col_05": {
+      "name": "Cross-Session Memory Recall",
+      "category": "collab",
+      "tools": [
+        "save_checkpoint",
+        "restore_checkpoint",
+        "create_chat_chain"
+      ],
+      "path": "skills/collab/col_05/SKILL.md",
+      "inputs": [
+        "agent_id",
+        "query"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.session_store"
+    },
+    "col_06": {
+      "name": "Session Compression",
+      "category": "collab",
+      "tools": [
+        "save_checkpoint",
+        "restore_checkpoint",
+        "create_chat_chain"
+      ],
+      "path": "skills/collab/col_06/SKILL.md",
+      "inputs": [
+        "agent_id",
+        "query"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.memory_compress"
+    },
+    "col_07": {
+      "name": "Memory Hierarchy (Tier Summaries)",
+      "category": "collab",
+      "tools": [
+        "save_checkpoint",
+        "restore_checkpoint",
+        "create_chat_chain"
+      ],
+      "path": "skills/collab/col_07/SKILL.md",
+      "inputs": [
+        "agent_id",
+        "query"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.memory_hierarchy"
+    },
+    "col_08": {
+      "name": "Memory Clustering",
+      "category": "collab",
+      "tools": [
+        "save_checkpoint",
+        "restore_checkpoint",
+        "create_chat_chain"
+      ],
+      "path": "skills/collab/col_08/SKILL.md",
+      "inputs": [
+        "agent_id",
+        "query"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.memory_clustering"
+    },
+    "col_09": {
+      "name": "Cross-Language Memory Merge",
+      "category": "collab",
+      "tools": [
+        "save_checkpoint",
+        "restore_checkpoint",
+        "create_chat_chain"
+      ],
+      "path": "skills/collab/col_09/SKILL.md",
+      "inputs": [
+        "agent_id",
+        "query"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.memory_cross_language"
+    },
+    "col_10": {
+      "name": "Vector-Space Cluster Merge",
+      "category": "collab",
+      "tools": [
+        "save_checkpoint",
+        "restore_checkpoint",
+        "create_chat_chain"
+      ],
+      "path": "skills/collab/col_10/SKILL.md",
+      "inputs": [
+        "agent_id",
+        "query"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.memory_vector_merge"
+    },
+    "col_11": {
+      "name": "PR Comment Scoring",
+      "category": "collab",
+      "tools": [
+        "manage_task_lifecycle",
+        "trigger_workflow",
+        "create_dropbox"
+      ],
+      "path": "skills/collab/col_11/SKILL.md",
+      "inputs": [
+        "agent_id",
+        "query"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.pr_comment_scoring"
+    },
+    "col_12": {
+      "name": "PR Sentiment Analysis",
+      "category": "collab",
+      "tools": [
+        "manage_task_lifecycle",
+        "trigger_workflow",
+        "create_dropbox"
+      ],
+      "path": "skills/collab/col_12/SKILL.md",
+      "inputs": [
+        "agent_id",
+        "query"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.pr_sentiment"
+    },
+    "ana_07": {
+      "name": "Judge Consensus (Multi-Model)",
+      "category": "analysis",
+      "tools": [
+        "dispatch_to_model",
+        "trigger_workflow",
+        "query_status"
+      ],
+      "path": "skills/analysis/ana_07/SKILL.md",
+      "inputs": [
+        "project_id",
+        "artifacts"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.judge_consensus"
+    },
+    "ana_08": {
+      "name": "Judge Weighted Voting",
+      "category": "analysis",
+      "tools": [
+        "dispatch_to_model",
+        "trigger_workflow",
+        "query_status"
+      ],
+      "path": "skills/analysis/ana_08/SKILL.md",
+      "inputs": [
+        "project_id",
+        "artifacts"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.judge_voting"
+    },
+    "ana_09": {
+      "name": "Judge Concurrency + Cache",
+      "category": "analysis",
+      "tools": [
+        "dispatch_to_model",
+        "trigger_workflow",
+        "query_status"
+      ],
+      "path": "skills/analysis/ana_09/SKILL.md",
+      "inputs": [
+        "project_id",
+        "artifacts"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.judge_concurrency"
+    },
+    "ana_10": {
+      "name": "LLM Embedder (Agnes/OpenAI)",
+      "category": "analysis",
+      "tools": [
+        "dispatch_to_model",
+        "query_status"
+      ],
+      "path": "skills/analysis/ana_10/SKILL.md",
+      "inputs": [
+        "project_id",
+        "artifacts"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.llm_embed"
+    },
+    "ana_11": {
+      "name": "Embed Cache (LRU+SQLite)",
+      "category": "analysis",
+      "tools": [
+        "dispatch_to_model",
+        "query_status"
+      ],
+      "path": "skills/analysis/ana_11/SKILL.md",
+      "inputs": [
+        "project_id",
+        "artifacts"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.embed_cache"
+    },
+    "ana_12": {
+      "name": "Cluster Naming (Heuristic/LLM)",
+      "category": "analysis",
+      "tools": [
+        "dispatch_to_model",
+        "query_status"
+      ],
+      "path": "skills/analysis/ana_12/SKILL.md",
+      "inputs": [
+        "project_id",
+        "artifacts"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.cluster_naming"
+    },
+    "tst_06": {
+      "name": "PR Diff Hunk Completion",
+      "category": "test",
+      "tools": [
+        "enforce_tdd",
+        "execute_in_sandbox",
+        "guardrails"
+      ],
+      "path": "skills/test/tst_06/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.pr_diff_completion"
+    },
+    "tst_07": {
+      "name": "PR Diff Cross-Hunk Consistency",
+      "category": "test",
+      "tools": [
+        "enforce_tdd",
+        "execute_in_sandbox",
+        "guardrails"
+      ],
+      "path": "skills/test/tst_07/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.pr_diff_consistency"
+    },
+    "tst_08": {
+      "name": "PR Diff Tree-Sitter Semantics",
+      "category": "test",
+      "tools": [
+        "enforce_tdd",
+        "execute_in_sandbox",
+        "guardrails"
+      ],
+      "path": "skills/test/tst_08/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.pr_diff_semantics"
+    },
+    "tst_09": {
+      "name": "PR Auto-Suggester",
+      "category": "test",
+      "tools": [
+        "dispatch_to_model",
+        "execute_in_sandbox"
+      ],
+      "path": "skills/test/tst_09/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.pr_autosuggest"
+    },
+    "tst_10": {
+      "name": "Checkpoint IAM Policy",
+      "category": "test",
+      "tools": [
+        "guardrails",
+        "execute_in_sandbox",
+        "query_rule"
+      ],
+      "path": "skills/test/tst_10/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.checkpoint_iam"
+    },
+    "tst_11": {
+      "name": "Checkpoint IAM Drift Remediate",
+      "category": "test",
+      "tools": [
+        "guardrails",
+        "execute_in_sandbox",
+        "query_rule"
+      ],
+      "path": "skills/test/tst_11/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.checkpoint_iam_remediate"
+    },
+    "dev_13": {
+      "name": "Multilingual Cluster Naming",
+      "category": "dev",
+      "tools": [
+        "dispatch_to_model",
+        "query_status"
+      ],
+      "path": "skills/dev/dev_13/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.cluster_multilingual"
+    },
+    "dev_14": {
+      "name": "SPIRE gRPC Remote SVID",
+      "category": "dev",
+      "tools": [
+        "trace_operation",
+        "query_trace",
+        "guardrails"
+      ],
+      "path": "skills/dev/dev_14/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.spiffe_grpc"
+    },
+    "dev_15": {
+      "name": "Bidir mTLS K8s Values",
+      "category": "dev",
+      "tools": [
+        "trace_operation",
+        "query_trace",
+        "guardrails"
+      ],
+      "path": "skills/dev/dev_15/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.spire_k8s_mtls"
+    },
+    "dev_16": {
+      "name": "Bidir mTLS Regression",
+      "category": "dev",
+      "tools": [
+        "trace_operation",
+        "query_trace",
+        "guardrails"
+      ],
+      "path": "skills/dev/dev_16/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.spire_bidir_regression"
+    },
+    "dev_17": {
+      "name": "OnCall gRPC Deliver",
+      "category": "dev",
+      "tools": [
+        "trace_operation",
+        "trigger_workflow",
+        "create_dropbox"
+      ],
+      "path": "skills/dev/dev_17/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.oncall_grpc_deliver"
+    },
+    "dev_18": {
+      "name": "OnCall Delivery Payload/Route",
+      "category": "dev",
+      "tools": [
+        "trace_operation",
+        "trigger_workflow",
+        "create_dropbox"
+      ],
+      "path": "skills/dev/dev_18/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.oncall_deliver"
+    },
+    "dev_19": {
+      "name": "IAM Bundle Render",
+      "category": "dev",
+      "tools": [
+        "guardrails",
+        "execute_in_sandbox",
+        "query_rule"
+      ],
+      "path": "skills/dev/dev_19/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.checkpoint_iam"
+    },
+    "dev_20": {
+      "name": "Team RBAC + S3 Versioning",
+      "category": "dev",
+      "tools": [
+        "guardrails",
+        "query_rule",
+        "execute_in_sandbox"
+      ],
+      "path": "skills/dev/dev_20/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.checkpoint_rbac"
+    },
+    "ttl_05": {
+      "name": "Template Marketplace",
+      "category": "tool",
+      "tools": [
+        "manage_task_lifecycle",
+        "trigger_workflow",
+        "query_status"
+      ],
+      "path": "skills/tool/ttl_05/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.template_pr"
+    },
+    "ttl_06": {
+      "name": "Template PR Validate/Render",
+      "category": "tool",
+      "tools": [
+        "manage_task_lifecycle",
+        "trigger_workflow",
+        "query_status"
+      ],
+      "path": "skills/tool/ttl_06/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.template_pr"
+    },
+    "ttl_07": {
+      "name": "Vector Memory Store",
+      "category": "tool",
+      "tools": [
+        "save_checkpoint",
+        "restore_checkpoint"
+      ],
+      "path": "skills/tool/ttl_07/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.vector_memory"
+    },
+    "ttl_08": {
+      "name": "Agent Identity + X509",
+      "category": "tool",
+      "tools": [
+        "guardrails",
+        "trace_operation",
+        "query_rule"
+      ],
+      "path": "skills/tool/ttl_08/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.identity"
+    },
+    "ttl_09": {
+      "name": "K8s Templates Render",
+      "category": "tool",
+      "tools": [
+        "query_status",
+        "guardrails"
+      ],
+      "path": "skills/tool/ttl_09/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.templates"
+    },
+    "ttl_10": {
+      "name": "Sandbox / Dropbox / Lifecycle",
+      "category": "tool",
+      "tools": [
+        "execute_in_sandbox",
+        "create_dropbox",
+        "manage_task_lifecycle"
+      ],
+      "path": "skills/tool/ttl_10/SKILL.md",
+      "inputs": [
+        "project_id"
+      ],
+      "outputs": [
+        "report"
+      ],
+      "module": "charter.tools"
     }
   }
 }
