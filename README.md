@@ -6,7 +6,7 @@
 >
 > 定义 Agent 怎么干活、干到什么标准、什么时候该停下来让人确认
 
-[![Version](https://img.shields.io/badge/version-3.11.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
+[![Version](https://img.shields.io/badge/version-3.12.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Skill Definition](https://img.shields.io/badge/Skill-v2.1.0-green.svg)](SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
@@ -214,6 +214,27 @@ python -m charter.mcp_server     # stdio JSON-RPC
 一条命令跑通 反思 → 网关 → 熔断 → 语义追踪 → 模型路由 → 缓存 全链路。
 
 455 测试（原 402 + 53），3.9 / 3.11 / 3.12 全绿。
+
+## 🔄 v3.12 — Critic 修复后重跑闭环 + SemanticCache 持久化落盘
+
+- **Critic 自愈闭环**：`Critic.apply_repairs(plan, repairs)` 把修复补丁注入 plan
+  （insert_step / break_cycle / dedupe_artifact，原 plan 不改动）；
+  `Critic.reflect_until_sound(plan, outputs, max_rounds)` 闭环驱动——
+  reflect → 注入补丁 → 重跑，直到 plan 结构 sound 或达上限。`CriticReport`
+  新增 `rounds` / `history` / `converged` / `final_plan` 字段，"报错"真正变"自愈"。
+- **SemanticCache 持久化**：`SemanticCache(disk_path=...)` 升级为两级缓存
+  （内存 LRU + SQLite 落盘，复用 `embed_cache` 的 SQLite store 模式）；
+  `put` 同步写盘、`get` 内存 miss 回查磁盘并回填，实现**跨进程语义缓存**降本。
+  新增 `close()` / `is_persistent()` / `stats()["disk_enabled"]`。
+  ```python
+  cache = SemanticCache(disk_path="./cache/semantic.sqlite")
+  cache.put("q1-growth-rate", 0.12)
+  cache.close()
+  # 新进程
+  cache2 = SemanticCache(disk_path="./cache/semantic.sqlite")
+  cache2.get("q1 growth rate")  # -> 0.12 (跨进程命中)
+  ```
+- 469 测试（原 455 + 7 Critic 闭环 + 5 SemanticCache 持久化 + 2 版本调整），3.9 / 3.11 / 3.12 全绿。
 
 ## 目录 / Table of Contents
 
