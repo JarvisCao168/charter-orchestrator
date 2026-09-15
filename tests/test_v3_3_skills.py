@@ -16,8 +16,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from charter import __version__
 
 
-def test_version_is_v3_3():
-    assert __version__.startswith("3.3")
+def test_version_is_v3_4():
+    assert __version__.startswith("3.4")
 
 
 # ---------------------------------------------------------------------------
