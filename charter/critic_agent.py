@@ -28,7 +28,23 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
-__all__ = ["CriticPlan", "CriticStep", "CriticFinding", "Critic", "CriticReport"]
+__all__ = ["CriticPlan", "CriticStep", "CriticFinding", "Critic", "CriticReport",
+           "apply_repairs", "reflect_until_sound"]
+
+def apply_repairs(plan: CriticPlan, repairs: List[Dict[str, Any]]) -> CriticPlan:
+    """Module-level convenience: apply ``repairs`` to ``plan`` via a default
+    :class:`Critic` and return the patched copy."""
+    return Critic().apply_repairs(plan, repairs)
+
+
+def reflect_until_sound(plan: CriticPlan,
+                        outputs: Optional[Dict[str, Any]] = None,
+                        max_rounds: int = 5,
+                        critic: Optional[Critic] = None) -> CriticReport:
+    """Module-level convenience: closed-loop reflect-and-repair on ``plan``."""
+    c = critic or Critic()
+    return c.reflect_until_sound(plan, outputs, max_rounds=max_rounds)
+
 
 
 # ---------------------------------------------------------------------------
@@ -99,15 +115,23 @@ class CriticReport:
     repairs: List[Dict[str, Any]] = field(default_factory=list)
     sound: bool = True
     ts: float = field(default_factory=time.time)
+    # v3.12: closed-loop fields (set by reflect_until_sound)
+    rounds: int = 0
+    history: List[Dict[str, Any]] = field(default_factory=list)
+    converged: Optional[bool] = None
+    final_plan: Optional[Dict[str, Any]] = None
 
     @property
     def findings(self) -> List[Dict[str, Any]]:
         return self.pre_findings + self.post_findings
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"sound": self.sound, "pre_findings": self.pre_findings,
-                "post_findings": self.post_findings, "repairs": self.repairs,
-                "ts": self.ts}
+        out = {"sound": self.sound, "pre_findings": self.pre_findings,
+               "post_findings": self.post_findings, "repairs": self.repairs,
+               "ts": self.ts, "rounds": self.rounds,
+               "history": self.history, "converged": self.converged,
+               "final_plan": self.final_plan}
+        return out
 
 
 # ---------------------------------------------------------------------------
@@ -259,3 +283,91 @@ class Critic:
             repairs=repairs,
             sound=sound)
         return report
+
+    # -- repair application (v3.12) ------------------------------------
+    def apply_repairs(self, plan: CriticPlan,
+                      repairs: List[Dict[str, Any]]) -> CriticPlan:
+        """Inject a set of repair patches into ``plan`` and return a NEW plan.
+
+        Supports the patch actions produced by :meth:`repair`:
+          - ``insert_step``: add a stub step for a dangling dependency.
+          - ``break_cycle``: drop one edge (the first suggested) to unblock.
+          - ``dedupe_artifact``: remove the duplicate producer's artifact.
+          - ``attach_step`` / ``flag``: no structural change (kept as-is).
+
+        The input plan is not mutated; a copy is returned so the original
+        remains available for audit / replay.
+        """
+        import copy as _copy
+        new_plan = _copy.deepcopy(plan)
+        by_id = new_plan.by_id()
+        for patch in repairs:
+            action = patch.get("action")
+            if action == "insert_step":
+                step_dict = patch.get("step", {})
+                if step_dict and step_dict.get("id") not in by_id:
+                    new_step = CriticStep(
+                        id=step_dict.get("id", "stub"),
+                        name=step_dict.get("name", "auto-stub"),
+                        depends_on=list(step_dict.get("depends_on", [])),
+                        inputs=dict(step_dict.get("inputs", {})),
+                        produces=list(step_dict.get("produces", [])),
+                        required=step_dict.get("required", False))
+                    new_plan.steps.append(new_step)
+                    by_id = new_plan.by_id()
+            elif action == "break_cycle":
+                edge = patch.get("suggested_edge_removal") or []
+                if len(edge) >= 2:
+                    src, dst = edge[0], edge[1]
+                    # drop dst's dependency on src (the suggested edge)
+                    for s in new_plan.steps:
+                        if s.id == dst and src in s.depends_on:
+                            s.depends_on.remove(src)
+            elif action == "dedupe_artifact":
+                artifact = patch.get("artifact")
+                keep = patch.get("keep")
+                # Remove the artifact from every step that is NOT the keeper.
+                for s in new_plan.steps:
+                    if s.id != keep and artifact in s.produces:
+                        s.produces.remove(artifact)
+            # attach_step / flag: no structural change needed for the plan shape
+        return new_plan
+
+    # -- closed-loop reflection (v3.12) --------------------------------
+    def reflect_until_sound(self,
+                            plan: CriticPlan,
+                            outputs: Optional[Dict[str, Any]] = None,
+                            max_rounds: int = 5) -> CriticReport:
+        """Repair-and-rerun closed loop: reflect, inject patches, re-check.
+
+        Each round: (1) reflect on the current plan, (2) if not sound, apply
+        the generated repairs to produce a patched plan, (3) re-reflect on the
+        patched plan. Stops when the plan is sound OR ``max_rounds`` is
+        reached. Returns a report whose ``final_plan`` is the last patched
+        plan, ``converged`` reflects whether it ended sound, and ``history``
+        records the per-round summary.
+        """
+        max_rounds = max(1, int(max_rounds))
+        current = plan
+        history: List[Dict[str, Any]] = []
+        report: CriticReport = self.reflect(current, outputs)
+        round_no = 0
+        while (not report.sound) and round_no < max_rounds:
+            round_no += 1
+            # apply the repairs from this round to get the next plan
+            current = self.apply_repairs(current, report.repairs)
+            report = self.reflect(current, outputs)
+            history.append({
+                "round": round_no,
+                "sound": report.sound,
+                "pre_findings": len(report.pre_findings),
+                "post_findings": len(report.post_findings),
+                "repairs": len(report.repairs),
+                "plan_steps": len(current.steps),
+            })
+        report.rounds = round_no
+        report.history = history
+        report.converged = report.sound
+        report.final_plan = current.to_dict()
+        return report
+
