@@ -215,6 +215,23 @@ python -m charter.mcp_server     # stdio JSON-RPC
 
 455 测试（原 402 + 53），3.9 / 3.11 / 3.12 全绿。
 
+## 🔄 v3.13 — 治理 MCP 工具 + Critic 重跑闭环 + 分布式语义缓存
+
+- **4 个治理 MCP 工具**（`validate_output` / `critic_plan` / `trace_span` /
+  `route_task`，20 -> 24）：四大治理模块（校验网关 / 批评者 / 语义追踪 / 模型路由）
+  直接暴露为 MCP 工具，`skills/gov_05..08` + manifest 115 条目。
+- **Critic repair-rerun 智能体闭环**：`repair_and_rerun(plan, executor,
+  max_rounds)` — reflect → 修复 → **智能体重跑** → 重审 完整循环；
+  `executor(step)` 驱动逐步重跑，异常记录不传播；无 executor 时退化为
+  `reflect_until_sound`（纯 plan 修复）。
+- **分布式 SemanticCache**：三级 L1 内存 → L2 SQLite → L3 远端后端；
+  `HTTPKeyValueBackend`（纯 stdlib，离线安全：网络错误降级为 miss）+
+  `make_remote_backend(kind, base_url)` 工厂（`http`/`kv`/`redis`/`postgres`/
+  `memcached`/`null` 统一经 HTTP KV 网关）。
+- **`charter.cli demo --gov`**：四模块链 + 两种闭环模式的端到端治理演示。
+- **测试**：492 全绿（3.9 / 3.11 / 3.12）；新增 `test_gov_mcp_tools` /
+  `test_critic_repair_rerun` / `test_semantic_cache_remote` / `test_v3_13`。
+
 ## 🔄 v3.12 — Critic 修复后重跑闭环 + SemanticCache 持久化落盘
 
 - **Critic 自愈闭环**：`Critic.apply_repairs(plan, repairs)` 把修复补丁注入 plan
