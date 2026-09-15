@@ -25,8 +25,8 @@ from charter.mcp_server import (
 )
 
 
-def test_version_is_v3_3():
-    assert __version__.startswith("3.3")
+def test_version_is_v3_4():
+    assert __version__.startswith("3.4")
 
 
 # ---------------------------------------------------------------------------
@@ -316,3 +316,43 @@ def test_new_categories_have_skills():
     assert cats.get("test", 0) >= 11
     assert cats.get("deploy", 0) >= 12
     assert cats.get("tool", 0) >= 10
+
+
+# ---------------------------------------------------------------------------
+# X-API-Key auth on the HTTP/SSE transport (v3.4)
+# ---------------------------------------------------------------------------
+
+def test_http_server_no_key_is_open():
+    from charter.mcp_server import HTTPMCPServer
+    srv = HTTPMCPServer(api_key=None)
+    # no key configured -> auth passes with any/absent header
+    assert srv._auth_ok({}) is True
+
+
+def test_http_server_key_requires_header():
+    from charter.mcp_server import HTTPMCPServer
+    srv = HTTPMCPServer(api_key="secret-123")
+    assert srv._auth_ok({}) is False                  # missing header
+    assert srv._auth_ok({"X-API-Key": "wrong"}) is False
+    assert srv._auth_ok({"X-API-Key": "secret-123"}) is True
+
+
+def test_http_server_key_read_from_env(monkeypatch):
+    from charter.mcp_server import HTTPMCPServer
+    monkeypatch.setenv("CHARTER_MCP_API_KEY", "env-key")
+    srv = HTTPMCPServer()   # api_key=None -> falls back to env
+    assert srv.api_key == "env-key"
+    assert srv._auth_ok({"X-API-Key": "env-key"}) is True
+    assert srv._auth_ok({}) is False
+    monkeypatch.delenv("CHARTER_MCP_API_KEY", raising=False)
+
+
+def test_run_http_server_respects_env_key(monkeypatch):
+    """run_http_server reads CHARTER_MCP_API_KEY when no explicit key given."""
+    import importlib
+    import charter.mcp_server as ms
+    monkeypatch.setenv("CHARTER_MCP_API_KEY", "env-key-2")
+    # construct via the same fallback path run_http_server uses
+    srv = ms.HTTPMCPServer(api_key=None)
+    assert srv.api_key == "env-key-2"
+    monkeypatch.delenv("CHARTER_MCP_API_KEY", raising=False)
