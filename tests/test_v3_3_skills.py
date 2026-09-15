@@ -560,10 +560,17 @@ def test_skill_tst_08_pr_diff_tree_sitter():
     assert isinstance(out, list)
 
 
-def test_skill_tst_09_pr_autosuggester():
-    """tst_09 PR Auto-Suggester -> pr_autosuggest.pr_autosuggest"""
-    from charter import pr_autosuggest
-    out = pr_autosuggest("diff with a rename get_data -> fetch_data")
+def test_skill_tst_09_pr_autosuggester(monkeypatch):
+    """tst_09 PR Auto-Suggester -> pr_autosuggest.pr_autosuggest (offline, env-robust)."""
+    import importlib
+    pa_mod = importlib.import_module("charter.pr_autosuggest")
+    # Force the offline heuristic backend + scrub network keys so this test is
+    # deterministic under CI (which injects AGNES/OPENAI/GITHUB keys).
+    monkeypatch.delenv("AGNES_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("PR_SUGGESTER", raising=False)
+    out = pa_mod.pr_autosuggest("diff with a rename get_data -> fetch_data",
+                                backend="heuristic")
     assert out is not None
     assert hasattr(out, "suggestion") or hasattr(out, "text") or isinstance(out, object)
 
@@ -576,9 +583,12 @@ def test_skill_col_11_pr_comment_scoring():
     assert isinstance(out, dict)
 
 
-def test_skill_col_12_pr_sentiment():
-    """col_12 PR Sentiment Analysis -> pr_sentiment.analyze_comment"""
+def test_skill_col_12_pr_sentiment(monkeypatch):
+    """col_12 PR Sentiment Analysis -> pr_sentiment.analyze_comment (offline, env-robust)."""
+    import os as _os
     from charter import pr_sentiment
+    monkeypatch.delenv("AGNES_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     out = pr_sentiment.analyze_comment("Great work, LGTM! One nit on naming.")
     assert out is not None
     assert hasattr(out, "sentiment") or isinstance(out, dict)
