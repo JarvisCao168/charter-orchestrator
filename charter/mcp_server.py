@@ -574,6 +574,14 @@ class CharterMCPServer:
         self._initialized = False
         self._resource_list: List[Dict[str, Any]] = []
         self._build_resources()
+        # v3.6: resource subscriptions + live metrics resource
+        import threading as _th
+        self._subs_lock = _th.Lock()
+        self._subscriptions: Dict[str, set] = {}
+        # Optional reference to the HTTPMCPServer that owns this instance,
+        # set when constructed by HTTPMCPServer, so the metrics resource
+        # can expose live request counters.
+        self._http_owner: Optional[Any] = None
 
     def _build_resources(self) -> None:
         import json as _json
@@ -593,6 +601,36 @@ class CharterMCPServer:
                 })
         except Exception:
             pass
+        # v3.6: always expose the live metrics resource (outside the try so it
+        # is registered even when the manifest is missing/unreadable).
+        self._resource_list.append({
+            "uri": "charter://metrics",
+            "name": "charter-metrics",
+            "description": "Live Prometheus-format request counters for the "
+                           "Charter MCP HTTP+SSE server. Subscribe to be "
+                           "notified when counters change.",
+            "mimeType": "text/plain; version=0.0.4",
+        })
+
+    def _metrics_resource_text(self) -> str:
+        """Text payload for the ``charter://metrics`` resource.
+
+        When this instance is owned by an :class:`HTTPMCPServer` (HTTP+SSE
+        mode), the owner's live request counters are exposed. In stdio mode
+        there are no HTTP counters, so a static explanatory note is returned.
+        """
+        owner = self._http_owner
+        if owner is not None and hasattr(owner, "_metrics_payload"):
+            try:
+                return owner._metrics_payload()["text"]
+            except Exception:
+                pass
+        return (
+            "# Charter MCP metrics resource (charter://metrics)\n"
+            "# stdio mode: no HTTP request counters available.\n"
+            "# Use the HTTP+SSE transport (run_http_server) and the\n"
+            "# /metrics endpoint for Prometheus-format counters.\n"
+        )
 
     # -- JSON-RPC dispatch ------------------------------------------------
 
@@ -630,6 +668,17 @@ class CharterMCPServer:
 
         if method == "resources/read":
             uri = params.get("uri", "")
+            if uri == "charter://metrics":
+                # Live metrics resource: return the HTTP server's counters
+                # when running over HTTP+SSE, otherwise a static note.
+                metrics_text = self._metrics_resource_text()
+                return self._result(msg_id, {
+                    "contents": [{
+                        "uri": uri,
+                        "mimeType": "text/plain; version=0.0.4",
+                        "text": metrics_text,
+                    }]
+                })
             if not uri.startswith("charter://skills/"):
                 return self._error(msg_id, -32602, f"unsupported URI: {uri}")
             skill_id = uri.split("/")[-1]
@@ -643,6 +692,30 @@ class CharterMCPServer:
                     "text": entry.get("content", ""),
                 }]
             })
+
+        # --- resource subscriptions (v3.6) ---
+        if method == "resources/subscribe":
+            uri = params.get("uri", "")
+            client_key = params.get("__client", "_stdio")
+            with self._subs_lock:
+                self._subscriptions.setdefault(client_key, set()).add(uri)
+            return self._result(msg_id, {"uri": uri, "subscribed": True,
+                                          "client": client_key})
+
+        if method == "resources/unsubscribe":
+            uri = params.get("uri", "")
+            client_key = params.get("__client", "_stdio")
+            with self._subs_lock:
+                self._subscriptions.get(client_key, set()).discard(uri)
+            return self._result(msg_id, {"uri": uri, "subscribed": False,
+                                          "client": client_key})
+
+        if method == "resources/list_subscriptions":
+            client_key = params.get("__client", "_stdio")
+            with self._subs_lock:
+                subs = sorted(self._subscriptions.get(client_key, set()))
+            return self._result(msg_id, {"client": client_key,
+                                          "subscriptions": subs})
 
         if method == "ping":
             if msg_id is None:
@@ -727,6 +800,7 @@ class HTTPMCPServer:
         # unset, the server runs open (backwards-compatible with v3.2).
         self.api_key = api_key if api_key is not None else os.environ.get("CHARTER_MCP_API_KEY")
         self._server = CharterMCPServer()
+        self._server._http_owner = self  # v3.6: expose live metrics via the resource
         self._lock = threading.Lock()
         # Per-client SSE queues keyed by a client id.
         self._client_queues: Dict[str, "queue.Queue"] = {}
@@ -866,6 +940,9 @@ class HTTPMCPServer:
                     self._send_json(404, {"error": "not found"})
 
             def _sse_stream(self):
+                from urllib.parse import urlparse, parse_qs as _pq
+                _q = _pq(urlparse(self.path).query)
+                stream_mode = (_q.get("stream") or ["mcp"])[0]  # "mcp" | "metrics"
                 cid = outer._new_client()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
@@ -878,19 +955,34 @@ class HTTPMCPServer:
                 self.wfile.flush()
                 q = outer._client_queues[cid]
                 try:
-                    while True:
-                        try:
-                            item = q.get(timeout=15)
-                        except queue.Empty:
-                            # keepalive comment so proxies don't time out
-                            self.wfile.write(b": keepalive\n\n")
+                    if stream_mode == "metrics":
+                        # Push a live Prometheus metrics snapshot every 5s.
+                        # SSE data fields cannot contain raw newlines, so each
+                        # line of the metrics text becomes its own "data:" line
+                        # inside a single event.
+                        import time as _time
+                        while True:
+                            snap = outer._metrics_payload()["text"]
+                            data_lines = "".join(
+                                f"data: {line}\n" for line in snap.splitlines())
+                            self.wfile.write(
+                                f"event: metrics\n{data_lines}\n".encode())
                             self.wfile.flush()
-                            continue
-                        if item is None:
-                            break
-                        self.wfile.write(
-                            f"event: message\ndata: {item}\n\n".encode())
-                        self.wfile.flush()
+                            _time.sleep(5)
+                    else:
+                        while True:
+                            try:
+                                item = q.get(timeout=15)
+                            except queue.Empty:
+                                # keepalive comment so proxies don't time out
+                                self.wfile.write(b": keepalive\n\n")
+                                self.wfile.flush()
+                                continue
+                            if item is None:
+                                break
+                            self.wfile.write(
+                                f"event: message\ndata: {item}\n\n".encode())
+                            self.wfile.flush()
                 except (BrokenPipeError, ConnectionResetError):
                     pass
                 finally:
