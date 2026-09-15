@@ -9,7 +9,7 @@ Quick start:
     from charter import init_project, advance_stage, confirm_gate, query_status
     python -m charter.cli demo
 """
-__version__ = "3.0.0"
+__version__ = "3.1.0"
 
 from .core import (
     init_project, advance_stage, confirm_gate, query_status,
@@ -254,6 +254,8 @@ from .checkpoint_iam_remediate import (
 
 
 __all__ = [
+    # v3.1 MCP
+    "CharterMCPServer", "list_mcp_tools", "load_skill", "run_tool",
     # v1.1 core
     "init_project", "advance_stage", "confirm_gate", "query_status",
     "save_checkpoint", "restore_checkpoint",
@@ -366,3 +368,5 @@ __all__ = [
     "semantic_check", "pick_symbol_resolver", "semantic_consistency_report",
     "IamRemediator", "IamDriftRemediation", "reconcile_iam",
 ]
+
+from .mcp_server import CharterMCPServer, list_mcp_tools, load_skill, run_tool  # noqa: F401
