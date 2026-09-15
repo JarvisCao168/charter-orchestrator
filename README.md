@@ -6,7 +6,7 @@
 >
 > 定义 Agent 怎么干活、干到什么标准、什么时候该停下来让人确认
 
-[![Version](https://img.shields.io/badge/version-3.10.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
+[![Version](https://img.shields.io/badge/version-3.11.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Skill Definition](https://img.shields.io/badge/Skill-v2.1.0-green.svg)](SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
@@ -195,6 +195,25 @@ python -m charter.mcp_server     # stdio JSON-RPC
       --snapshot ./audit/watch-$(date +%s).json
   ```
 - 402 测试（原 394 + 3 推送全文 + 5 --snapshot + 1 版本净增 + 3 调整），3.9 / 3.11 / 3.12 全绿。
+
+## 🛡️ v3.11 — 四大治理模块（事件溯源 / 反思 / 语义追踪 / 成本路由）
+
+基于《多Agent系统数据一致性与高可靠协同架构设计分析报告》进阶设计落地：
+
+- **`validation_gateway.py`**：三层校验网关（schema 契约 / 数据对齐 / 一致性矛盾）
+  + 熔断器（closed→open→half-open），`check_with_retry` 本地重试后降级不崩链路。
+- **`critic_agent.py`**：全局反思器——`pre_check`（结构审查：悬挂依赖/环/重复产出）、
+  `post_audit`（逻辑审查 + 可插拔规则）、`repair`（生成修复补丁，"报错"变"自愈"）。
+- **`semantic_trace.py`**：全链路语义追踪——`SemanticTracer` 记录每次工具调用
+  的输入→输出 embedding 余弦相似度，偏差 < 阈值自动判幻觉并拦截（`make_embedder`
+  有 key 走 LLM、无 key 离线 fallback，CI 仍绿）。
+- **`model_router.py`**：小模型路由 + 语义缓存——`TaskProfile.complexity()` 打分，
+  `ModelRouter` 选最便宜合格 tier，`SemanticCache` LRU 降 token 成本。
+
+四条全链路 demo：`make demo-skill SKILL=gov_01`（`gov_01..gov_04`），
+一条命令跑通 反思 → 网关 → 熔断 → 语义追踪 → 模型路由 → 缓存 全链路。
+
+455 测试（原 402 + 53），3.9 / 3.11 / 3.12 全绿。
 
 ## 目录 / Table of Contents
 
