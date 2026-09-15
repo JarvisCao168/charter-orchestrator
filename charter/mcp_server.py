@@ -718,15 +718,38 @@ import socketserver
 class HTTPMCPServer:
     """HTTP + SSE wrapper around a :class:`CharterMCPServer`."""
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 8765) -> None:
+    def __init__(self, host: str = "127.0.0.1", port: int = 8765,
+                 api_key: Optional[str] = None) -> None:
         self.host = host
         self.port = port
+        # Auth: an API key gates every /mcp/* endpoint. If none is passed,
+        # fall back to the CHARTER_MCP_API_KEY env var. When the key is empty/
+        # unset, the server runs open (backwards-compatible with v3.2).
+        self.api_key = api_key if api_key is not None else os.environ.get("CHARTER_MCP_API_KEY")
         self._server = CharterMCPServer()
         self._lock = threading.Lock()
         # Per-client SSE queues keyed by a client id.
         self._client_queues: Dict[str, "queue.Queue"] = {}
         self._clients_lock = threading.Lock()
         self._next_client = 0
+
+    def _auth_ok(self, request_headers: Any) -> bool:
+        """True when the request is allowed under the current auth policy.
+
+        - no api_key configured  -> always allowed (open server)
+        - api_key configured     -> requires a matching ``X-API-Key`` header
+        """
+        if not self.api_key:
+            return True
+        provided = None
+        get_header = getattr(request_headers, "get", None)
+        if callable(get_header):
+            provided = get_header("X-API-Key")
+        if provided is None and isinstance(request_headers, dict):
+            provided = request_headers.get("X-API-Key")
+        # constant-time-ish compare to avoid timing leaks on the prefix
+        import hmac
+        return hmac.compare_digest(provided or "", self.api_key)
 
     # -- client registration ------------------------------------------------
     def _new_client(self) -> str:
@@ -756,9 +779,17 @@ class HTTPMCPServer:
                 self.end_headers()
                 self.wfile.write(body)
 
+            def _auth_deny(self) -> None:
+                self._send_json(401, {"error": "unauthorized",
+                                      "hint": "send an X-API-Key header matching CHARTER_MCP_API_KEY"})
+
             def do_GET(self):
+                if not outer._auth_ok(self.headers):
+                    self._auth_deny()
+                    return
                 if self.path == "/mcp/health":
-                    self._send_json(200, {"ok": True, "server": MCP_SERVER_INFO})
+                    self._send_json(200, {"ok": True, "server": MCP_SERVER_INFO,
+                                          "auth_required": bool(outer.api_key)})
                 elif self.path == "/mcp/tools":
                     self._send_json(200, {"tools": list_mcp_tools()})
                 elif self.path == "/mcp/sse":
@@ -767,6 +798,9 @@ class HTTPMCPServer:
                     self._send_json(404, {"error": "not found"})
 
             def do_POST(self):
+                if not outer._auth_ok(self.headers):
+                    self._auth_deny()
+                    return
                 if self.path == "/mcp/message":
                     self._handle_message()
                 else:
@@ -846,9 +880,17 @@ class HTTPMCPServer:
             httpd.server_close()
 
 
-def run_http_server(host: str = "127.0.0.1", port: int = 8765) -> None:
-    """Start the optional HTTP + SSE MCP transport (stdlib-only)."""
-    HTTPMCPServer(host=host, port=port).run()
+def run_http_server(host: str = "127.0.0.1", port: int = 8765,
+                    api_key: Optional[str] = None) -> None:
+    """Start the optional HTTP + SSE MCP transport (stdlib-only).
+
+    Auth: pass ``api_key`` or set the ``CHARTER_MCP_API_KEY`` env var to gate
+    all ``/mcp/*`` endpoints behind an ``X-API-Key`` header. When neither is
+    set the server stays open (default, matches v3.2 behaviour).
+    """
+    if api_key is None:
+        api_key = os.environ.get("CHARTER_MCP_API_KEY")
+    HTTPMCPServer(host=host, port=port, api_key=api_key).run()
 
 
 if __name__ == "__main__":
