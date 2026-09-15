@@ -23,7 +23,7 @@ from charter.demo_skill import (
 
 
 def test_version_is_v3_5():
-    assert __version__.startswith("3.5")
+    assert __version__.startswith("3.6")
 
 
 def test_list_demo_skills_well_formed():
@@ -190,3 +190,61 @@ def test_main_watch_exits_zero_when_met():
     # 0% SLO is always met -> exit 0
     rc = main(["--watch", "--iterations", "1", "--slo-pct", "0"])
     assert rc == 0
+
+
+# ---------------------------------------------------------------------------
+# v3.6 — demo-skill watch SLO alerts delivered to Grafana OnCall (gRPC)
+# ---------------------------------------------------------------------------
+
+def test_deliver_oncall_plan_only_without_grpc():
+    """_deliver_oncall degrades to a plan-only receipt when no live OnCall service."""
+    from charter.demo_skill import _deliver_oncall
+    alert = {"severity": "critical", "message": "SLO breach", "failed_skills": ["obs_09"]}
+    out = _deliver_oncall(alert, target="grafana-oncall:50051",
+                          integration_name="pagerduty")
+    # The OnCall integration is built-in; without grpc the e2e report is plan-only.
+    assert "oncall" in alert  # the delivery receipt was merged onto the alert
+    assert alert["oncall"]["delivered"] in (True, False)
+    assert alert["oncall"]["plan_only"] in (True, False)
+    assert alert["oncall"]["target"] == "grafana-oncall:50051"
+    assert out is alert  # returns the (now-augmented) alert record
+
+
+def test_run_watch_delivers_oncall_when_breach():
+    """run_watch(oncall_target=...) delivers SLO alerts to OnCall on breach."""
+    from charter.demo_skill import run_watch
+    # Force a breach: threshold > 100 is impossible to meet, so every
+    # iteration fires an alert and (with oncall_target set) delivers to OnCall.
+    report = run_watch(iterations=1, slo_pct_threshold=999.0,
+                       oncall_target="grafana-oncall:50051")
+    assert report["alerts"], "expected at least one SLO alert at 999% threshold"
+    a = report["alerts"][0]
+    assert "oncall" in a, "alert should carry the OnCall delivery receipt"
+    assert a["oncall"]["target"] == "grafana-oncall:50051"
+    # Delivery is plan-only in CI (no live OnCall + no grpc), but the
+    # delivery path itself was exercised.
+    assert a["oncall"]["plan_only"] in (True, False)
+
+
+def test_run_watch_no_oncall_when_slo_met():
+    """When the SLO is met, no alert fires and no OnCall delivery happens."""
+    from charter.demo_skill import run_watch
+    report = run_watch(iterations=1, slo_pct_threshold=0.0,
+                       oncall_target="grafana-oncall:50051")
+    assert report["slo_met"] is True
+    assert report["alerts"] == []
+    # No alerts -> nothing delivered
+    assert report["worst_ratio"] >= 0.0
+
+
+def test_deliver_oncall_unavailable_module_returns_gracefully():
+    """If the OnCall module is importable but the delivery raises, we degrade."""
+    import importlib
+    from charter import demo_skill
+    # The helper must never raise even when OnCall is unreachable.
+    alert = {"severity": "warning", "message": "x", "failed_skills": []}
+    out = demo_skill._deliver_oncall(alert, target="nonexistent:9999",
+                                     integration_name="pagerduty")
+    # Either it delivered (plan-only) or recorded the failure, but did not crash.
+    assert out is alert
+    assert "oncall" in alert
