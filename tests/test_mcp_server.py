@@ -25,8 +25,8 @@ from charter.mcp_server import (
 )
 
 
-def test_version_is_v3_1():
-    assert __version__.startswith("3.1") or __version__.startswith("3.0")
+def test_version_is_v3_2():
+    assert __version__.startswith("3.2")
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +93,7 @@ def test_run_tool_query_status():
 def test_run_tool_list_skills():
     out = run_tool("list_skills", {})
     assert out["ok"], out
-    assert out["result"]["total"] == 47, f"expected 47 skills, got {out['result']['total']}"
+    assert out["result"]["total"] == 107, f"expected 47 skills, got {out['result']['total']}"
 
 
 def test_run_tool_list_skills_category_filter():
@@ -199,7 +199,7 @@ def test_mcp_server_resources_list():
     server = CharterMCPServer()
     resp = server.handle({"jsonrpc": "2.0", "id": 5, "method": "resources/list", "params": {}})
     resources = resp["result"]["resources"]
-    assert len(resources) == 47, f"expected 47 skill resources, got {len(resources)}"
+    assert len(resources) == 107, f"expected 107 skill resources, got {len(resources)}"
     for res in resources:
         assert res["uri"].startswith("charter://skills/")
         assert res["mimeType"] == "text/markdown"
@@ -244,3 +244,75 @@ def test_mcp_server_ping():
     server = CharterMCPServer()
     resp = server.handle({"jsonrpc": "2.0", "id": 9, "method": "ping"})
     assert resp["result"] == {}
+
+
+# ---------------------------------------------------------------------------
+# SSE / HTTP transport (v3.2)
+# ---------------------------------------------------------------------------
+
+def test_http_mcp_server_importable():
+    from charter.mcp_server import HTTPMCPServer, run_http_server
+    assert callable(run_http_server)
+    assert isinstance(HTTPMCPServer, type)
+
+
+def test_http_server_construction():
+    from charter.mcp_server import HTTPMCPServer
+    srv = HTTPMCPServer(host="127.0.0.1", port=8799)
+    # It wraps a CharterMCPServer and builds 107 resources
+    assert hasattr(srv, "_server")
+    resources = srv._server._resource_list
+    assert len(resources) == 107, f"expected 107 resources, got {len(resources)}"
+    # all URIs are well-formed
+    for r in resources:
+        assert r["uri"].startswith("charter://skills/")
+
+
+def test_mcp_tools_endpoint_shape():
+    from charter.mcp_server import list_mcp_tools
+    tools = list_mcp_tools()
+    assert len(tools) == 20
+    names = {t["name"] for t in tools}
+    assert "init_project" in names and "dispatch_to_model" in names
+    # each tool has a valid JSON-serializable inputSchema
+    import json as _json
+    for t in tools:
+        _json.dumps(t)  # raises if not serializable
+
+
+def test_new_skills_have_valid_paths():
+    """All 107 manifest entries point to a file that exists on disk."""
+    import os
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    manifest_path = os.path.join(base, "skills", "manifest.json")
+    with open(manifest_path, encoding="utf-8") as f:
+        manifest = json.load(f)
+    skills = manifest["skills"]
+    assert len(skills) == 107
+    for sid, meta in skills.items():
+        p = os.path.join(base, meta["path"])
+        assert os.path.isfile(p), f"missing skill file: {meta['path']}"
+        # tools refs must be in the 20-tool set
+        for t in meta.get("tools", []):
+            assert t in set(manifest.get("tools", [])), f"{sid} refs unknown tool {t}"
+
+
+def test_new_categories_have_skills():
+    import json
+    import os
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(base, "skills", "manifest.json"), encoding="utf-8") as f:
+        manifest = json.load(f)
+    cats = {}
+    for sid, meta in manifest["skills"].items():
+        c = meta["category"]
+        cats[c] = cats.get(c, 0) + 1
+    # v3.2 added 60 skills; dev/security/obs/collab/analysis/test/deploy all grew
+    assert cats.get("dev", 0) >= 20
+    assert cats.get("security", 0) >= 11
+    assert cats.get("obs", 0) >= 12
+    assert cats.get("collab", 0) >= 12
+    assert cats.get("analysis", 0) >= 12
+    assert cats.get("test", 0) >= 11
+    assert cats.get("deploy", 0) >= 12
+    assert cats.get("tool", 0) >= 10
