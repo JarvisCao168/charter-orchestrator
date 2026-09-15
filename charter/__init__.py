@@ -9,7 +9,7 @@ Quick start:
     from charter import init_project, advance_stage, confirm_gate, query_status
     python -m charter.cli demo
 """
-__version__ = "2.5.0"
+__version__ = "2.6.0"
 
 from .core import (
     init_project, advance_stage, confirm_gate, query_status,
@@ -129,6 +129,31 @@ from .cross_repo import (
     import_into_core,
 )
 
+# --- v2.6 multi-system linkages (phase 3) ---
+from .judge_concurrency import (
+    vote_judges_concurrent, JudgeResultCache, cached_vote,
+)
+from .memory_clustering import (
+    Cluster, MemoryClusterer, cluster_episodes, cluster_session,
+    cluster_count,
+)
+from .mimir_multitenant import (
+    mimir_tenants, tenant_rules, label_propagation_config,
+    mimir_provisioning_bundle,
+)
+from .spire_k8s_mtls import (
+    K8SSPIREAgentConfig, render_spire_agent_config,
+    render_agent_values, mtls_env,
+)
+from .pr_sentiment import (
+    CommentAnalysis, HeuristicCommentAnalyzer, LLMCommentAnalyzer,
+    analyze_comment, analyze_pr_comments, pick_analyzer,
+)
+from .checkpoint_shared import (
+    SharedCheckpointStore, AuditLog,
+    publish_to_team, pull_from_team, audit_report,
+)
+
 
 __all__ = [
     # v1.1 core
@@ -185,4 +210,16 @@ __all__ = [
     "PRSignals", "fetch_pr_signals", "score_from_pr", "auto_merge_gate",
     "CheckpointBus", "PublishedCheckpoint", "publish_checkpoint",
     "pull_checkpoint", "list_published", "import_into_core",
+    # v2.6
+    "vote_judges_concurrent", "JudgeResultCache", "cached_vote",
+    "Cluster", "MemoryClusterer", "cluster_episodes", "cluster_session",
+    "cluster_count",
+    "mimir_tenants", "tenant_rules", "label_propagation_config",
+    "mimir_provisioning_bundle",
+    "K8SSPIREAgentConfig", "render_spire_agent_config",
+    "render_agent_values", "mtls_env",
+    "CommentAnalysis", "HeuristicCommentAnalyzer", "LLMCommentAnalyzer",
+    "analyze_comment", "analyze_pr_comments", "pick_analyzer",
+    "SharedCheckpointStore", "AuditLog", "publish_to_team",
+    "pull_from_team", "audit_report",
 ]
