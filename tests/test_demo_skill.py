@@ -23,7 +23,7 @@ from charter.demo_skill import (
 
 
 def test_version_is_v3_5():
-    assert __version__.startswith("3.8")
+    assert __version__.startswith("3.9")
 
 
 def test_list_demo_skills_well_formed():
@@ -450,3 +450,142 @@ def test_promql_requires_base_url_in_cli():
     from charter.demo_skill import main
     rc = main(["--promql", "up"])
     assert rc == 1
+
+
+# ---------------------------------------------------------------------------
+# v3.9 — demo-skill watch --promql range mode (window aggregation)
+# ---------------------------------------------------------------------------
+
+def _fake_range_query_ok(values):
+    """Return a canned _query_range seam that always succeeds with the given
+    list of values (one series)."""
+    def _q(base_url, promql, start, end, step):
+        return {"status": 200,
+                "data": {"status": "success",
+                          "result": [{"__name__": "metric",
+                                      "values": [[0, str(v)] for v in values]}]}}
+    return _q
+
+
+def _avg_threshold(th):
+    """A threshold_fn that works with the normalized range shape."""
+    def _fn(qres):
+        if not qres.get("ok"):
+            return False, None, qres.get("error", "unknown")
+        r = ((qres.get("data") or {}).get("result") or [{}])[0]
+        v = float(r.get("value", [0, 0])[1])
+        return v <= th, v, f"observed={v} threshold={th}"
+    return _fn
+
+
+def test_aggregate_range_values_avg_max_min():
+    """_aggregate_range_values reduces a multi-value range result correctly."""
+    from charter.demo_skill import _aggregate_range_values
+    qres = {"ok": True, "data": {"result": [
+        {"values": [[1, "1.0"], [2, "2.0"], [3, "3.0"], [4, "4.0"]]}]}}
+    assert _aggregate_range_values(qres, agg="avg") == 2.5
+    assert _aggregate_range_values(qres, agg="max") == 4.0
+    assert _aggregate_range_values(qres, agg="min") == 1.0
+    assert _aggregate_range_values(qres, agg="sum") == 10.0
+
+
+def test_aggregate_range_values_p95():
+    """_aggregate_range_values p95 uses nearest-rank on the sorted values."""
+    from charter.demo_skill import _aggregate_range_values
+    # 20 values 1..20 -> p95 = 19th value = 19.0
+    vals = [[i, str(i)] for i in range(1, 21)]
+    qres = {"ok": True, "data": {"result": [{"values": vals}]}}
+    assert _aggregate_range_values(qres, agg="p95") == 19.0
+
+
+def test_aggregate_range_values_no_values():
+    """_aggregate_range_values returns None when there are no values."""
+    from charter.demo_skill import _aggregate_range_values
+    assert _aggregate_range_values({"ok": True, "data": {"result": []}}, agg="avg") is None
+    assert _aggregate_range_values({"ok": False, "data": None}, agg="max") is None
+
+
+def test_query_prometheus_range_seam_ok():
+    """_query_prometheus_range with a seam returns the canned range result."""
+    from charter.demo_skill import _query_prometheus_range
+    out = _query_prometheus_range("http://prom", "up", start="1", end="10", step="60s",
+                                  _query=_fake_range_query_ok([1.0, 2.0, 3.0]))
+    assert out["ok"] is True
+    assert out["status"] == 200
+    assert len(out["data"]["result"][0]["values"]) == 3
+
+
+def test_query_prometheus_range_seam_error():
+    """A range-query seam that fails degrades to a plan-only error receipt."""
+    from charter.demo_skill import _query_prometheus_range
+    def boom(base_url, promql, start, end, step):
+        raise RuntimeError("range query down")
+    out = _query_prometheus_range("http://prom", "up", "1", "10", "60s", _query=boom)
+    assert out["ok"] is False
+    assert "range query down" in out["error"]
+
+
+def test_run_watch_from_promql_range_mode_met():
+    """range_mode=True aggregates the window and SLO is met (no alert)."""
+    from charter.demo_skill import run_watch_from_promql
+    # avg of [0.1, 0.2, 0.3] = 0.2 <= 0.5 -> met
+    report = run_watch_from_promql(
+        base_url="http://prom:9090",
+        promql="error_rate",
+        threshold_fn=_avg_threshold(0.5),
+        iterations=1,
+        range_mode=True,
+        range_window="5m",
+        range_step="60s",
+        range_agg="avg",
+        _query_range=_fake_range_query_ok([0.1, 0.2, 0.3]))
+    assert report["slo_met"] is True
+    assert report["mode"] == "promql-range"
+    assert report["range_agg"] == "avg"
+    assert report["alerts"] == []
+    assert abs(report["history"][0]["observed"] - 0.2) < 1e-9  # avg of [0.1,0.2,0.3]
+
+
+def test_run_watch_from_promql_range_mode_breach():
+    """range_mode=True with a breach delivers an alert via Alertmanager."""
+    from charter.demo_skill import run_watch_from_promql
+    # max of [0.6, 0.7] = 0.7 > 0.5 -> breach
+    report = run_watch_from_promql(
+        base_url="http://prom:9090",
+        promql="error_rate",
+        threshold_fn=_avg_threshold(0.5),
+        iterations=1,
+        range_mode=True,
+        range_window="5m",
+        range_step="60s",
+        range_agg="max",
+        alertmanager_url="http://am:9093/api/v2/alerts",
+        _query_range=_fake_range_query_ok([0.6, 0.7]))
+    assert report["slo_met"] is False
+    assert len(report["alerts"]) == 1
+    a = report["alerts"][0]
+    assert a["observed"] == 0.7  # max of the window
+    assert "alertmanager" in a, "range breach should carry the Alertmanager receipt"
+    assert a["alertmanager"]["url"] == "http://am:9093/api/v2/alerts"
+
+
+def test_run_watch_from_promql_range_query_failure():
+    """When the range query fails, an alert fires with the error message."""
+    from charter.demo_skill import run_watch_from_promql
+    def th_fn(qres):
+        if not qres.get("ok"):
+            return False, None, qres.get("error", "unknown")
+        return True, None, "ok"
+    report = run_watch_from_promql(
+        base_url="http://prom:9090",
+        promql="up",
+        threshold_fn=th_fn,
+        iterations=1,
+        range_mode=True,
+        range_window="5m",
+        range_step="60s",
+        range_agg="avg",
+        _query_range=lambda *a, **k: {"status": 500, "data": None, "error": "range down"})
+    assert report["slo_met"] is False
+    assert len(report["alerts"]) == 1
+    assert "range down" in report["alerts"][0]["message"]
