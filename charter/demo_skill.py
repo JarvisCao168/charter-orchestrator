@@ -15,10 +15,10 @@ import importlib
 import json
 import os
 import sys
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 __all__ = ["run_demo_skill", "list_demo_skills", "DEMO_SKILLS", "run_all_demos",
-           "run_watch", "main"]
+           "run_watch", "main", "_deliver_oncall"]
 
 # ---------------------------------------------------------------------------
 # Skill -> real-module-chain demos
@@ -298,10 +298,48 @@ def _eval_slo(report: Dict[str, Any], slo_pct_threshold: float) -> Dict[str, Any
     }
 
 
+def _deliver_oncall(alert: Dict[str, Any],
+                    target: str,
+                    integration_name: str = "pagerduty") -> Dict[str, Any]:
+    """Deliver a watch SLO alert to Grafana OnCall over gRPC.
+
+    Uses ``charter.oncall_grpc_e2e`` (live channel when ``grpc`` + a stub
+    are available; otherwise the built-in ``_MockChannel`` degrades to a
+    plan-only receipt so CI stays green without a live OnCall service).
+    Returns the e2e delivery report merged onto the alert record.
+    """
+    try:
+        from charter import oncall_grpc_e2e, oncall_deliver
+    except Exception as exc:  # pragma: no cover - charter is in-tree
+        return {"delivered": False, "via": "oncall-unavailable",
+                "error": str(exc), "request_id": None, "target": target}
+    integration = oncall_deliver.OnCallIntegration(
+        name=integration_name, kind="pagerduty")
+    # The alert dict carries the SLO context OnCall wants to page on.
+    out = oncall_grpc_e2e.e2e_delivery_report(
+        {"severity": alert.get("severity", "warning"),
+         "title": alert.get("message", "demo-skill watch SLO breach"),
+         "context": alert},
+        integration, target=target)
+    # Merge the receipt onto the alert so the watch report shows delivery.
+    receipt = out.get("receipt") or {}
+    alert["oncall"] = {
+        "delivered": out.get("notify_invoked", False),
+        "plan_only": out.get("plan_only", True),
+        "transport": out.get("transport"),
+        "target": out.get("target", target),
+        "request_id": receipt.get("request_id"),
+        "receipt_ts": receipt.get("ts"),
+    }
+    return alert
+
+
 def run_watch(iterations: int = 3,
               slo_pct_threshold: float = 90.0,
               as_json: bool = False,
-              _sleep_s: float = 0.0) -> Dict[str, Any]:
+              _sleep_s: float = 0.0,
+              oncall_target: Optional[str] = None,
+              oncall_integration: str = "pagerduty") -> Dict[str, Any]:
     """Continuously run every bespoke demo chain and watch the SLO.
 
     Each iteration re-runs ``run_all_demos()`` (the real module chains),
@@ -332,7 +370,7 @@ def run_watch(iterations: int = 3,
         }
         history.append(entry)
         if slo["alert"]:
-            alerts.append({
+            alert = {
                 "iteration": i,
                 "severity": "warning" if slo["ratio"] >= 0.75 else "critical",
                 "slo_pct_threshold": slo_pct_threshold,
@@ -344,7 +382,13 @@ def run_watch(iterations: int = 3,
                 "failed_skills": [
                     sid for sid, ok in report.get("per_skill", {}).items() if not ok
                 ],
-            })
+            }
+            if oncall_target:
+                # v3.6: actually deliver the alert to Grafana OnCall (gRPC),
+                # not just print it. Degrades to plan-only without live gRPC.
+                _deliver_oncall(alert, target=oncall_target,
+                                integration_name=oncall_integration)
+            alerts.append(alert)
         worst_ratio = min(worst_ratio, slo["ratio"])
         if _sleep_s and i < iterations:
             import time as _time
@@ -374,10 +418,18 @@ def main(argv: List[str]) -> int:
                         help="how many watch iterations to run (default 3)")
     parser.add_argument("--slo-pct", type=float, default=90.0,
                         help="availability SLO threshold, percent of skills that must pass (default 90)")
+    parser.add_argument("--oncall-target", type=str, default=None,
+                        help="deliver watch SLO alerts to Grafana OnCall gRPC at this "
+                             "target (e.g. grafana-oncall:50051); degrades to plan-only "
+                             "when grpc is not installed")
+    parser.add_argument("--oncall-integration", type=str, default="pagerduty",
+                        help="OnCall integration name to page (default: pagerduty)")
     args = parser.parse_args(argv)
 
     if args.watch:
-        report = run_watch(iterations=args.iterations, slo_pct_threshold=args.slo_pct)
+        report = run_watch(iterations=args.iterations, slo_pct_threshold=args.slo_pct,
+                           oncall_target=args.oncall_target,
+                           oncall_integration=args.oncall_integration)
         if args.json:
             print(json.dumps(report, ensure_ascii=False, default=str, indent=2))
         else:
@@ -391,8 +443,14 @@ def main(argv: List[str]) -> int:
             if report["alerts"]:
                 print(f"  ALERTS ({len(report['alerts'])}):")
                 for a in report["alerts"]:
+                    oncall = a.get("oncall", {})
+                    if oncall:
+                        delivery = (f"oncall: {'delivered' if oncall.get('delivered') else 'plan-only'} "
+                                    f"({oncall.get('transport')}/{oncall.get('target')})")
+                    else:
+                        delivery = "oncall: not configured"
                     print(f"    [{a['severity'].upper()}] {a['message']} "
-                          f"(failed: {','.join(a['failed_skills']) or 'none'})")
+                          f"(failed: {','.join(a['failed_skills']) or 'none'}) [{delivery}]")
             print(f"  overall SLO: {'MET' if report['slo_met'] else 'BREACHED'} "
                   f"(worst ratio {report['worst_ratio']:.3f})")
         return 0 if report["slo_met"] else 1
