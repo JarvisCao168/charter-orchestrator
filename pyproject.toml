@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "charter-orchestrator"
-version = "3.0.0"
+version = "3.1.0"
 description = "Full-lifecycle governance & orchestration framework for AI agents - executable"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -28,6 +28,7 @@ llm = ["requests>=2.28"]
 k8s = ["kubernetes>=26.0"]
 grpc = ["grpcio>=1.60", "oncall-api-client"]
 tree-sitter = ["tree-sitter", "tree-sitter-python", "tree-sitter-language-pack"]
+mcp = ["mcp"]
 
 [tool.setuptools.packages.find]
 include = ["charter*"]
