@@ -9,7 +9,7 @@ Quick start:
     from charter import init_project, advance_stage, confirm_gate, query_status
     python -m charter.cli demo
 """
-__version__ = "2.7.0"
+__version__ = "2.8.0"
 
 from .core import (
     init_project, advance_stage, confirm_gate, query_status,
@@ -181,6 +181,30 @@ from .checkpoint_rbac import (
     team_policies,
 )
 
+# --- v2.8 multi-system linkages (phase 5) ---
+from .judge_pool_live import (
+    LiveJudgePool, autoscaler_plan, render_live_pool_bundle,
+)
+from .cluster_multilingual import (
+    detect_language, HeuristicMultilingualNamer, LLMMultilingualNamer,
+    multilingual_name_clusters, pick_multilingual_namer,
+)
+from .oncall_deliver import (
+    OnCallIntegration, OnCallClient, build_delivery_payload,
+    route_and_deliver,
+)
+from .spire_bidir_mtls import (
+    BidirMTLSConfig, build_bidir_mtls_context, validate_bidir_mtls,
+    render_bidir_k8s_values, attestation_exchange_plan,
+)
+from .pr_diff_completion import (
+    HunkProposal, HeuristicDiffCompleter, LLMDiffCompleter,
+    complete_diff_hunks, pick_diff_completer,
+)
+from .checkpoint_iam import (
+    iam_policy, s3_bucket_policy, render_iam_bundle, role_s3_actions,
+)
+
 
 __all__ = [
     # v1.1 core
@@ -262,4 +286,15 @@ __all__ = [
     "pr_autosuggest", "autosuggest_pr_comments", "pick_suggester",
     "TeamRBAC", "TeamPolicy", "s3_versioning_config",
     "s3_cross_region_replication", "team_policies",
+    # v2.8
+    "LiveJudgePool", "autoscaler_plan", "render_live_pool_bundle",
+    "detect_language", "HeuristicMultilingualNamer", "LLMMultilingualNamer",
+    "multilingual_name_clusters", "pick_multilingual_namer",
+    "OnCallIntegration", "OnCallClient", "build_delivery_payload",
+    "route_and_deliver",
+    "BidirMTLSConfig", "build_bidir_mtls_context", "validate_bidir_mtls",
+    "render_bidir_k8s_values", "attestation_exchange_plan",
+    "HunkProposal", "HeuristicDiffCompleter", "LLMDiffCompleter",
+    "complete_diff_hunks", "pick_diff_completer",
+    "iam_policy", "s3_bucket_policy", "render_iam_bundle", "role_s3_actions",
 ]
