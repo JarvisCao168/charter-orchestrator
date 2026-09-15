@@ -26,7 +26,7 @@ from charter.mcp_server import (
 
 
 def test_version_is_v3_5():
-    assert __version__.startswith("3.7")
+    assert __version__.startswith("3.8")
 
 
 # ---------------------------------------------------------------------------
@@ -573,3 +573,79 @@ def test_metrics_stream_is_event_driven_not_polling():
     # The 5s polling sleep is gone; the stream waits on the client queue.
     assert "_time.sleep(5)" not in src, "still polling every 5s"
     assert "q.get(timeout=30)" in src, "event-driven queue wait missing"
+
+
+# ---------------------------------------------------------------------------
+# v3.8 — tools/subscribe_result: push tool-call results to subscribers
+# ---------------------------------------------------------------------------
+
+def test_tool_subscribe_result_round_trip():
+    """tools/subscribe_result records a tool; list reflects it."""
+    from charter.mcp_server import CharterMCPServer
+    srv = CharterMCPServer()
+    r = srv.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/subscribe_result",
+                    "params": {"tool": "slo_evaluate", "__client": "c1"}})
+    assert r["result"]["subscribed"] is True
+    assert r["result"]["resource"] == "charter://tools/slo_evaluate/result"
+    r2 = srv.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list_result_subscriptions",
+                     "params": {"__client": "c1"}})
+    assert r2["result"]["tools"] == ["slo_evaluate"]
+    r3 = srv.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/unsubscribe_result",
+                     "params": {"tool": "slo_evaluate", "__client": "c1"}})
+    assert r3["result"]["subscribed"] is False
+    r4 = srv.handle({"jsonrpc": "2.0", "id": 4, "method": "tools/list_result_subscriptions",
+                     "params": {"__client": "c1"}})
+    assert r4["result"]["tools"] == []
+
+
+def test_tool_result_push_to_subscriber():
+    """A tools/call for a subscribed tool pushes a resources/changed event to the subscriber."""
+    from charter.mcp_server import CharterMCPServer
+    srv = CharterMCPServer()
+    srv.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/subscribe_result",
+                "params": {"tool": "slo_evaluate", "__client": "c1"}})
+    events = []
+    srv._notify_sink = lambda ev: events.append(ev)
+    # Call the tool directly via handle; the change notification should fire.
+    srv.handle({"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+                "params": {"name": "slo_evaluate",
+                           "arguments": {"target_p95_ms": 300,
+                                          "services": {"api": {"met": False,
+                                                                "p95_ms": 900,
+                                                                "error_rate": 0.05}}}}})
+    # A change event for the subscribed tool's result resource should be pushed
+    assert any(e["method"] == "notifications/resources/updated" and
+               e["params"]["uri"] == "charter://tools/slo_evaluate/result"
+               for e in events), "no tool-result push delivered"
+
+
+def test_tool_result_no_push_when_not_subscribed():
+    """When no client is subscribed to a tool, tools/call pushes nothing."""
+    from charter.mcp_server import CharterMCPServer
+    srv = CharterMCPServer()
+    events = []
+    srv._notify_sink = lambda ev: events.append(ev)
+    srv.handle({"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+                "params": {"name": "slo_evaluate",
+                           "arguments": {}}})
+    assert not events, "no push expected without a subscriber"
+
+
+def test_tool_result_per_client_isolation():
+    """Two clients subscribed to the same tool both get the push."""
+    from charter.mcp_server import CharterMCPServer
+    srv = CharterMCPServer()
+    srv.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/subscribe_result",
+                "params": {"tool": "slo_evaluate", "__client": "a"}})
+    srv.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/subscribe_result",
+                "params": {"tool": "slo_evaluate", "__client": "b"}})
+    got_a, got_b = [], []
+    def sink(ev):
+        if ev["params"].get("client") == "a":
+            got_a.append(ev)
+        else:
+            got_b.append(ev)
+    srv._notify_sink = sink
+    srv.handle({"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+                "params": {"name": "slo_evaluate", "arguments": {}}})
+    assert len(got_a) == 1 and len(got_b) == 1, "both subscribers should be notified"
