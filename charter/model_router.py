@@ -27,7 +27,8 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-__all__ = ["TaskProfile", "ModelTier", "ModelRouter", "SemanticCache", "route_task"]
+__all__ = ["TaskProfile", "ModelTier", "ModelRouter", "SemanticCache",
+           "route_task", "DEFAULT_TIERS"]
 
 
 # ---------------------------------------------------------------------------
@@ -134,17 +135,73 @@ class SemanticCache:
     ``charter.semantic_trace.make_embedder``) to get near-duplicate hits.
 
     Bounded by ``max_entries`` (LRU eviction). Thread-safe.
+
+    v3.12: optional on-disk SQLite persistence (``disk_path``). When set,
+    every ``put`` is also written to the ``semantic_cache`` table and every
+    ``get`` consults disk on an in-memory miss, so the cache survives process
+    restarts. Mirrors the two-level LRU+SQLite pattern of
+    ``charter.embed_cache.EmbedCache``. No new hard deps (sqlite3 is stdlib).
     """
 
     def __init__(self,
                  semantic_key: Optional[Any] = None,
-                 max_entries: int = 256) -> None:
+                 max_entries: int = 256,
+                 disk_path: Optional[str] = None) -> None:
         self._cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
         self._max_entries = max(1, int(max_entries))
         self._lock = __import__("threading").Lock()
         self._key_fn = semantic_key or _default_semantic_key
         self.hits = 0
         self.misses = 0
+        # v3.12: optional SQLite disk store for cross-process persistence.
+        self._db: Optional[Any] = None
+        self._disk_path = disk_path
+        if disk_path:
+            import sqlite3
+            import os as _os
+            parent = _os.path.dirname(disk_path)
+            if parent:
+                _os.makedirs(parent, exist_ok=True)
+            self._db = sqlite3.connect(disk_path, check_same_thread=False)
+            self._db.execute("PRAGMA journal_mode=WAL")
+            self._db.execute(
+                "CREATE TABLE IF NOT EXISTS semantic_cache ("
+                "cache_key TEXT PRIMARY KEY, value TEXT, ts REAL, hits INTEGER DEFAULT 0)")
+            self._db.commit()
+
+    # -- disk helpers ------------------------------------------------
+    def _disk_get(self, key: str) -> Optional[Any]:
+        if not self._db:
+            return None
+        row = self._db.execute(
+            "SELECT value FROM semantic_cache WHERE cache_key=?", (key,)).fetchone()
+        if row:
+            self._db.execute(
+                "UPDATE semantic_cache SET hits=hits+1 WHERE cache_key=?", (key,))
+            self._db.commit()
+            import json as _json
+            return _json.loads(row[0])
+        return None
+
+    def _disk_set(self, key: str, value: Any) -> None:
+        if not self._db:
+            return
+        import json as _json
+        self._db.execute(
+            "INSERT OR REPLACE INTO semantic_cache (cache_key, value, ts) VALUES (?,?,?)",
+            (key, _json.dumps(value, ensure_ascii=False, default=str), time.time()))
+        self._db.commit()
+
+    def close(self) -> None:
+        """Close the disk store (no-op when persistence is disabled)."""
+        if self._db is not None:
+            self._db.close()
+            self._db = None
+            self._disk_path = None
+
+    def is_persistent(self) -> bool:
+        """True when an on-disk SQLite store is attached."""
+        return self._db is not None
 
     # -- key --------------------------------------------------------
     def _k(self, request: str) -> str:
@@ -158,12 +215,23 @@ class SemanticCache:
         k = self._k(request)
         with self._lock:
             entry = self._cache.get(k)
-            if entry is None:
-                self.misses += 1
-                return None
-            self.hits += 1
-            self._cache.move_to_end(k)
-            return entry["value"]
+            if entry is not None:
+                self.hits += 1
+                self._cache.move_to_end(k)
+                return entry["value"]
+        # v3.12: memory miss -> consult the on-disk store.
+        disk_val = self._disk_get(k)
+        if disk_val is not None:
+            with self._lock:
+                self._cache[k] = {"value": disk_val, "ts": time.time()}
+                self._cache.move_to_end(k)
+                self.hits += 1
+                while len(self._cache) > self._max_entries:
+                    self._cache.popitem(last=False)
+            return disk_val
+        with self._lock:
+            self.misses += 1
+        return None
 
     def put(self, request: str, value: Any) -> None:
         k = self._k(request)
@@ -172,6 +240,8 @@ class SemanticCache:
             self._cache.move_to_end(k)
             while len(self._cache) > self._max_entries:
                 self._cache.popitem(last=False)
+        # v3.12: mirror to the on-disk store for cross-process persistence.
+        self._disk_set(k, value)
 
     def __contains__(self, request: str) -> bool:
         return self.get(request) is not None or self._k(request) in self._peek()
@@ -184,7 +254,9 @@ class SemanticCache:
         return {"entries": len(self._cache), "hits": self.hits,
                 "misses": self.misses,
                 "hit_rate": (self.hits / (self.hits + self.misses)
-                             if (self.hits + self.misses) else 0.0)}
+                             if (self.hits + self.misses) else 0.0),
+                "disk_enabled": self.is_persistent(),
+                "disk_path": self._disk_path}
 
     def clear(self) -> None:
         with self._lock:
