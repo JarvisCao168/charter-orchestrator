@@ -6,7 +6,7 @@
 >
 > 定义 Agent 怎么干活、干到什么标准、什么时候该停下来让人确认
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
+[![Version](https://img.shields.io/badge/version-3.1.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Skill Definition](https://img.shields.io/badge/Skill-v2.1.0-green.svg)](SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
@@ -30,6 +30,39 @@ python -m charter.cli demo     # 10 阶段 + 门禁 + TDD + Guardrails + 评估�
 - **10 automated tests**: `python -m pytest tests/`
 - **quick start**: [`docs/quickstart.md`](docs/quickstart.md)
 - **fault-coverage proof**: [`docs/fault_coverage.md`](docs/fault_coverage.md)
+
+## 🔄 MCP Server (v3.1)
+
+Charter now ships a stdio MCP server — mount the governance framework directly
+into Claude Code, Codex, or any MCP client:
+
+```bash
+pip install -e ".[mcp]"          # or: pip install charter-orchestrator[mcp]
+python -m charter.mcp_server     # stdio JSON-RPC
+```
+
+**MCP config** (Claude Desktop / Codex / `.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "charter-orchestrator": {
+      "command": "python",
+      "args": ["-m", "charter.mcp_server"]
+    }
+  }
+}
+```
+
+- **20 tools** exposed: `init_project`, `advance_stage`, `confirm_gate`,
+  `query_status`, `query_rule`, `list_skills`, `execute_in_sandbox`,
+  `create_dropbox`, `manage_task_lifecycle`, `trigger_workflow`,
+  `create_chat_chain`, `save_checkpoint`, `restore_checkpoint`,
+  `dispatch_to_model`, `manage_worktree`, `enforce_tdd`, `guardrails`,
+  `enable_autonomous_mode`, `trace_operation`, `query_trace`
+- **47 skills** as MCP resources (`charter://skills/<id>`), each with I/O contract
+- **SKILL.md** upgraded to Anthropic-compatible YAML frontmatter (native Claude Code discovery)
+
 
 ## 目录 / Table of Contents
 
