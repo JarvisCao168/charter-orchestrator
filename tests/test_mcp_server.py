@@ -26,7 +26,7 @@ from charter.mcp_server import (
 
 
 def test_version_is_v3_5():
-    assert __version__.startswith("3.8")
+    assert __version__.startswith("3.9")
 
 
 # ---------------------------------------------------------------------------
@@ -649,3 +649,56 @@ def test_tool_result_per_client_isolation():
     srv.handle({"jsonrpc": "2.0", "id": 5, "method": "tools/call",
                 "params": {"name": "slo_evaluate", "arguments": {}}})
     assert len(got_a) == 1 and len(got_b) == 1, "both subscribers should be notified"
+
+
+# ---------------------------------------------------------------------------
+# v3.9 — resources/read on charter://tools/<name>/result (read side of tool
+# results, complementing the v3.8 subscription/push side)
+# ---------------------------------------------------------------------------
+
+def test_tool_result_resource_read_before_call():
+    """resources/read on a tool-result resource with no call yet returns found=False."""
+    from charter.mcp_server import CharterMCPServer
+    srv = CharterMCPServer()
+    r = srv.handle({"jsonrpc": "2.0", "id": 1, "method": "resources/read",
+                    "params": {"uri": "charter://tools/slo_evaluate/result"}})
+    assert "contents" in r["result"]
+    import json as _json
+    payload = _json.loads(r["result"]["contents"][0]["text"])
+    assert payload["found"] is False
+    assert payload["tool"] == "slo_evaluate"
+    assert r["result"]["contents"][0]["mimeType"] == "application/json"
+
+
+def test_tool_result_resource_read_after_call():
+    """After a tools/call, resources/read returns the last result (found=True)."""
+    from charter.mcp_server import CharterMCPServer
+    import json as _json
+    srv = CharterMCPServer()
+    # Call the tool (empty args still run the real chain; ok may be True/False)
+    call = srv.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                       "params": {"name": "slo_evaluate", "arguments": {}}})
+    assert "result" in call  # the call succeeded at the JSON-RPC level
+    r = srv.handle({"jsonrpc": "2.0", "id": 2, "method": "resources/read",
+                    "params": {"uri": "charter://tools/slo_evaluate/result"}})
+    payload = _json.loads(r["result"]["contents"][0]["text"])
+    assert payload["found"] is True
+    assert payload["tool"] == "slo_evaluate"
+    assert "result" in payload
+    assert "ts" in payload
+
+
+def test_tool_result_resource_per_tool_isolated():
+    """Each tool's result resource is independent — calling one doesn't affect another."""
+    from charter.mcp_server import CharterMCPServer
+    import json as _json
+    srv = CharterMCPServer()
+    srv.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": "slo_evaluate", "arguments": {}}})
+    # slo_evaluate now has a result; a different tool has none
+    got = srv.handle({"jsonrpc": "2.0", "id": 2, "method": "resources/read",
+                     "params": {"uri": "charter://tools/slo_evaluate/result"}})
+    assert _json.loads(got["result"]["contents"][0]["text"])["found"] is True
+    other = srv.handle({"jsonrpc": "2.0", "id": 3, "method": "resources/read",
+                       "params": {"uri": "charter://tools/pr_autosuggest/result"}})
+    assert _json.loads(other["result"]["contents"][0]["text"])["found"] is False
