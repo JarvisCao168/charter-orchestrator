@@ -22,8 +22,8 @@ def main():
     with open(MANIFEST, encoding="utf-8") as f:
         m = json.load(f)
     skills = m.get("skills", {})
-    if len(skills) != 47:
-        errors.append(f"manifest skills {len(skills)} != 47")
+    if len(skills) != 107:
+        errors.append(f"manifest skills {len(skills)} != 107")
     if "tools" not in m or set(m["tools"]) != tools:
         errors.append("manifest tools block not in sync with SKILL.md")
     # 3. Each skill: file exists, referenced tools valid
@@ -49,7 +49,7 @@ def main():
         for e in errors:
             print("FAIL", e)
         sys.exit(1)
-    print(f"OK: 20 tools, 47 skill files, manifest structure valid, executable core present")
+    print(f"OK: 20 tools, 107 skill files, manifest structure valid, executable core present")
 
 if __name__ == "__main__":
     main()
