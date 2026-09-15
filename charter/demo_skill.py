@@ -18,7 +18,7 @@ import sys
 from typing import Any, Dict, List, Optional
 
 __all__ = ["run_demo_skill", "list_demo_skills", "DEMO_SKILLS", "run_all_demos",
-           "run_watch", "main", "_deliver_oncall"]
+           "run_watch", "main", "_deliver_oncall", "_deliver_alertmanager"]
 
 # ---------------------------------------------------------------------------
 # Skill -> real-module-chain demos
@@ -334,12 +334,96 @@ def _deliver_oncall(alert: Dict[str, Any],
     return alert
 
 
+def _deliver_alertmanager(alert: Dict[str, Any],
+                         url: str,
+                         timeout_s: float = 5.0,
+                         _post=None) -> Dict[str, Any]:
+    """Deliver a watch SLO alert to a Prometheus Alertmanager webhook.
+
+    POSTs an Alertmanager-compatible JSON payload to ``url``. When
+    ``_post`` (a ``fn(payload, url, timeout) -> (status_code, body_text)``)
+    is supplied, it is used instead of a real network call — this is the
+    test seam and also lets callers plug in an authenticated transport.
+    Without a live Alertmanager the call degrades to a plan-only receipt
+    (network / import failures never crash the watch).
+    Returns the augmented ``alert`` with an ``alertmanager`` receipt attached.
+    """
+    import json as _json
+    labels = {
+        "source": "charter-demo-skill",
+        "severity": alert.get("severity", "warning"),
+        "slo": "demo-skill-watch",
+    }
+    am_payload = {
+        "version": "4",
+        "groupKey": "charter:demo-skill-watch",
+        "status": "firing",
+        "alerts": [{
+            "status": "firing",
+            "labels": labels,
+            "annotations": {
+                "summary": alert.get("message", "demo-skill watch SLO breach"),
+                "description": (
+                    f"iteration={alert.get('iteration')} "
+                    f"observed_ratio={alert.get('observed_ratio')} "
+                    f"threshold={alert.get('slo_pct_threshold')}% "
+                    f"failed_skills={_json.dumps(alert.get('failed_skills', []))}"
+                ),
+            },
+            "startsAt": __import__("time").time(),
+        }],
+    }
+    if _post is not None:
+        try:
+            status, body = _post(am_payload, url, timeout_s)
+            alert["alertmanager"] = {
+                "delivered": 200 <= int(status) < 300,
+                "status": int(status),
+                "via": "alertmanager-webhook",
+                "url": url,
+                "response_body": body[:500] if isinstance(body, str) else "",
+            }
+            return alert
+        except Exception as exc:  # degrade gracefully
+            alert["alertmanager"] = {
+                "delivered": False, "status": None, "via": "alertmanager-plan",
+                "url": url, "error": str(exc),
+            }
+            return alert
+    # real network POST (stdlib urllib; degrades to plan-only on failure)
+    import urllib.request
+    try:
+        req = urllib.request.Request(
+            url,
+            data=_json.dumps(am_payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST")
+        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+            status = resp.getcode()
+            body = resp.read().decode("utf-8", "replace")
+        alert["alertmanager"] = {
+            "delivered": 200 <= status < 300,
+            "status": status,
+            "via": "alertmanager-webhook",
+            "url": url,
+            "response_body": body[:500],
+        }
+    except Exception as exc:
+        alert["alertmanager"] = {
+            "delivered": False, "status": None, "via": "alertmanager-plan",
+            "url": url, "error": str(exc),
+        }
+    return alert
+
+
 def run_watch(iterations: int = 3,
               slo_pct_threshold: float = 90.0,
               as_json: bool = False,
               _sleep_s: float = 0.0,
               oncall_target: Optional[str] = None,
-              oncall_integration: str = "pagerduty") -> Dict[str, Any]:
+              oncall_integration: str = "pagerduty",
+              alertmanager_url: Optional[str] = None,
+              alertmanager_timeout_s: float = 5.0) -> Dict[str, Any]:
     """Continuously run every bespoke demo chain and watch the SLO.
 
     Each iteration re-runs ``run_all_demos()`` (the real module chains),
@@ -388,6 +472,11 @@ def run_watch(iterations: int = 3,
                 # not just print it. Degrades to plan-only without live gRPC.
                 _deliver_oncall(alert, target=oncall_target,
                                 integration_name=oncall_integration)
+            if alertmanager_url:
+                # v3.7: second delivery channel — Prometheus Alertmanager
+                # webhook. Degrades to plan-only on network failure.
+                _deliver_alertmanager(alert, url=alertmanager_url,
+                                      timeout_s=alertmanager_timeout_s)
             alerts.append(alert)
         worst_ratio = min(worst_ratio, slo["ratio"])
         if _sleep_s and i < iterations:
@@ -424,12 +513,20 @@ def main(argv: List[str]) -> int:
                              "when grpc is not installed")
     parser.add_argument("--oncall-integration", type=str, default="pagerduty",
                         help="OnCall integration name to page (default: pagerduty)")
+    parser.add_argument("--alertmanager-url", type=str, default=None,
+                        help="deliver watch SLO alerts to a Prometheus Alertmanager "
+                             "webhook at this URL (JSON POST); degrades to plan-only "
+                             "on network failure")
+    parser.add_argument("--alertmanager-timeout", type=float, default=5.0,
+                        help="Alertmanager webhook HTTP timeout seconds (default 5)")
     args = parser.parse_args(argv)
 
     if args.watch:
         report = run_watch(iterations=args.iterations, slo_pct_threshold=args.slo_pct,
                            oncall_target=args.oncall_target,
-                           oncall_integration=args.oncall_integration)
+                           oncall_integration=args.oncall_integration,
+                           alertmanager_url=args.alertmanager_url,
+                           alertmanager_timeout_s=args.alertmanager_timeout)
         if args.json:
             print(json.dumps(report, ensure_ascii=False, default=str, indent=2))
         else:
@@ -449,6 +546,10 @@ def main(argv: List[str]) -> int:
                                     f"({oncall.get('transport')}/{oncall.get('target')})")
                     else:
                         delivery = "oncall: not configured"
+                    am = a.get("alertmanager", {})
+                    if am:
+                        delivery += (f" | alertmanager: {'delivered' if am.get('delivered') else 'plan-only'} "
+                                     f"({am.get('status')}/{am.get('url')})")
                     print(f"    [{a['severity'].upper()}] {a['message']} "
                           f"(failed: {','.join(a['failed_skills']) or 'none'}) [{delivery}]")
             print(f"  overall SLO: {'MET' if report['slo_met'] else 'BREACHED'} "
