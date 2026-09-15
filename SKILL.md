@@ -1015,12 +1015,21 @@ v1.0 为首次公开发布版本，包含以下全量能力：
 - ✅ PR 评论 LLM diff 级代码补全（`charter/pr_diff_completion.py`，hunks + comments → before/after 改写 + rationale，可插拔 LLM/heuristic）
 - ✅ checkpoint RBAC 生成真实 IAM/S3 bucket policy（`charter/checkpoint_iam.py`，per-role IAM + deny-default bucket policy + bundle）
 
-**v2.9 候选 / v2.9 Candidates:**
-- 分布式 judge 池接 K8s 集群自动扩缩（KEDA 多触发源 + 成本感知）
-- 记忆多语言命名接跨语言 episode 自动归并（同主题不同语言合并）
-- OnCall 接真实 Grafana gRPC channel 投递（非 plan-only）
-- k8s SPIRE 双向 mTLS 接真实 node agent socket 回归测试
-- PR diff 补全接多文件 + 跨 hunk 一致性校验
-- checkpoint IAM 接真实 AWS 账号生成 + 策略自动 apply + 审计
+**v2.9 已实现 / v2.9 Shipped:**
+- ✅ judge 池多触发源 + 成本感知扩缩（`charter/judge_pool_cost.py`，KEDA 多触发 + $ budget cap maxReplicas + 扩缩决策表）
+- ✅ 记忆跨语言自动归并（`charter/memory_cross_language.py`，CJK→roman 关键词表 + Jaccard/余弦跨语言合并同主题 cluster）
+- ✅ OnCall 真实 gRPC channel 投递（`charter/oncall_grpc_deliver.py`，OnCallGRPCClient.deliver + service/method stubs + channel 配置）
+- ✅ k8s SPIRE 双向 mTLS 真实 node-agent socket 回归测试（`charter/spire_bidir_regression.py`，MockNodeAgent + MockWorkload + 6 不变量校验）
+- ✅ PR diff 跨文件 + 跨 hunk 一致性（`charter/pr_diff_consistency.py`，unpropagated-rename/removed-def/conflicting-after 检测 + 协调 + 跨文件 blast radius）
+- ✅ checkpoint IAM 接真实 AWS 账号 + 自动 apply + 审计（`charter/checkpoint_iam_apply.py`，IamApplier.apply 创建角色/挂策略/put bucket policy + IamAuditLog + drift 报告）
+
+**v2.10 候选 / v2.10 Candidates:**
+- judge 池接 K8s 集群 + 结果落 S3 + 真实 KEDA 部署（非 plan-only）
+- 跨语言归并接向量空间真归并（同主题多语言 embedding 聚类）
+- OnCall 接真实 Grafana gRPC channel（非 plan-only）端到端投递
+- SPIRE 双向 mTLS 接真实 node-agent socket 回归（真实证书 + 真握手）
+- PR diff 一致性接 LSP / tree-sitter 真语义分析（非启发式）
+- checkpoint IAM 接真实 AWS apply + 审计 + 自动 drift 修复
+
 
 
