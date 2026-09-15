@@ -586,6 +586,11 @@ class CharterMCPServer:
         # An optional sink callable the HTTP owner sets: fn(event_dict) -> None,
         # invoked for each client that is subscribed to a changed resource.
         self._notify_sink: Optional[Any] = None
+        # v3.8: per-client tool-result subscriptions. When a client subscribes to
+        # "tool results" for a given tool name, every subsequent tools/call for
+        # that tool triggers a resources/changed push to that client (the tool's
+        # output is exposed as the virtual resource charter://tools/<name>/result).
+        self._tool_subscriptions: Dict[str, set] = {}  # client_key -> set of tool names
 
     def _build_resources(self) -> None:
         import json as _json
@@ -669,6 +674,22 @@ class CharterMCPServer:
                 pass
         return True
 
+    def _notify_tool_result_changed(self, tool_name: str,
+                                    outcome: Dict[str, Any]) -> int:
+        """v3.8: push a resources/changed event to every client subscribed to
+        ``tool_name``'s result resource. Returns the number of clients notified."""
+        with self._subs_lock:
+            keys = [k for k, tools in self._tool_subscriptions.items()
+                    if tool_name in tools]
+        resource_uri = f"charter://tools/{tool_name}/result"
+        notified = 0
+        for key in keys:
+            payload = {"tool": tool_name, "result": outcome,
+                       "ok": outcome.get("ok", False)}
+            if self.notify_resource_changed(resource_uri, key, payload=payload):
+                notified += 1
+        return notified
+
     # -- JSON-RPC dispatch ------------------------------------------------
 
     def handle(self, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -695,6 +716,9 @@ class CharterMCPServer:
             args = params.get("arguments", {})
             outcome = run_tool(tool_name, args)
             text = json.dumps(outcome, ensure_ascii=False, default=str)
+            # v3.8: push the tool-result change to any client subscribed to this
+            # tool's result resource (charter://tools/<name>/result).
+            self._notify_tool_result_changed(tool_name, outcome)
             return self._result(msg_id, {
                 "content": [{"type": "text", "text": text}],
                 "isError": not outcome.get("ok", False),
@@ -753,6 +777,37 @@ class CharterMCPServer:
                 subs = sorted(self._subscriptions.get(client_key, set()))
             return self._result(msg_id, {"client": client_key,
                                           "subscriptions": subs})
+
+        # v3.8: subscribe to a tool's result resource.
+        if method == "tools/subscribe_result":
+            tool_name = params.get("tool", "")
+            client_key = params.get("__client", "_stdio")
+            resource_uri = f"charter://tools/{tool_name}/result"
+            with self._subs_lock:
+                self._tool_subscriptions.setdefault(client_key, set()).add(tool_name)
+                # Also record in the generic resource-subscription set so the
+                # notify_resource_changed gate (which checks _subscriptions)
+                # lets the push through for this client.
+                self._subscriptions.setdefault(client_key, set()).add(resource_uri)
+            return self._result(msg_id, {"tool": tool_name, "subscribed": True,
+                                          "resource": resource_uri,
+                                          "client": client_key})
+
+        if method == "tools/unsubscribe_result":
+            tool_name = params.get("tool", "")
+            client_key = params.get("__client", "_stdio")
+            resource_uri = f"charter://tools/{tool_name}/result"
+            with self._subs_lock:
+                self._tool_subscriptions.get(client_key, set()).discard(tool_name)
+                self._subscriptions.get(client_key, set()).discard(resource_uri)
+            return self._result(msg_id, {"tool": tool_name, "subscribed": False,
+                                          "client": client_key})
+
+        if method == "tools/list_result_subscriptions":
+            client_key = params.get("__client", "_stdio")
+            with self._subs_lock:
+                tools = sorted(self._tool_subscriptions.get(client_key, set()))
+            return self._result(msg_id, {"client": client_key, "tools": tools})
 
         if method == "ping":
             if msg_id is None:
