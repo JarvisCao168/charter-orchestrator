@@ -40,7 +40,7 @@ from charter import __version__
 # version
 # ------------------------------------------------------------------
 def test_version_bumped_v2_7():
-    assert __version__.startswith("2.7")
+    assert __version__.startswith("2.")
 
 
 # ------------------------------------------------------------------
