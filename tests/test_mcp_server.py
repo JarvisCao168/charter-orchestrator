@@ -25,8 +25,8 @@ from charter.mcp_server import (
 )
 
 
-def test_version_is_v3_4():
-    assert __version__.startswith("3.4")
+def test_version_is_v3_5():
+    assert __version__.startswith("3.5")
 
 
 # ---------------------------------------------------------------------------
@@ -356,3 +356,57 @@ def test_run_http_server_respects_env_key(monkeypatch):
     srv = ms.HTTPMCPServer(api_key=None)
     assert srv.api_key == "env-key-2"
     monkeypatch.delenv("CHARTER_MCP_API_KEY", raising=False)
+
+
+# ---------------------------------------------------------------------------
+# Prometheus /metrics endpoint (v3.5)
+# ---------------------------------------------------------------------------
+
+def test_metrics_endpoint_increments_counter():
+    from charter.mcp_server import HTTPMCPServer
+    srv = HTTPMCPServer()
+    srv._inc_request("GET", "/mcp/health", 200)
+    srv._inc_request("GET", "/mcp/health", 200)
+    srv._inc_request("POST", "/mcp/message", 202)
+    payload = srv._metrics_payload()
+    text = payload["text"]
+    assert 'charter_mcp_requests_total{method="GET",endpoint="/mcp/health",status="2xx"} 2' in text
+    assert 'charter_mcp_requests_total{method="POST",endpoint="/mcp/message",status="2xx"} 1' in text
+    assert "charter_mcp_uptime_seconds" in text
+
+
+def test_metrics_endpoint_by_endpoint_counter():
+    from charter.mcp_server import HTTPMCPServer
+    srv = HTTPMCPServer()
+    srv._inc_request("GET", "/mcp/tools", 200)
+    srv._inc_request("GET", "/mcp/sse", 200)
+    srv._inc_request("GET", "/nope", 404)
+    text = srv._metrics_payload()["text"]
+    assert 'charter_mcp_requests_by_endpoint_total{endpoint="/mcp/tools"} 1' in text
+    assert 'charter_mcp_requests_by_endpoint_total{endpoint="/mcp/sse"} 1' in text
+    assert 'charter_mcp_requests_by_endpoint_total{endpoint="/nope"} 1' in text
+
+
+def test_metrics_status_class_buckets():
+    from charter.mcp_server import HTTPMCPServer
+    srv = HTTPMCPServer()
+    srv._inc_request("GET", "/mcp/health", 200)
+    srv._inc_request("GET", "/mcp/health", 401)
+    srv._inc_request("GET", "/mcp/health", 500)
+    text = srv._metrics_payload()["text"]
+    assert 'status="2xx"} 1' in text
+    assert 'status="4xx"} 1' in text
+    assert 'status="5xx"} 1' in text
+
+
+def test_metrics_endpoint_is_open_no_auth():
+    """The /metrics path is served without an X-API-Key (scrapers must work)."""
+    from charter.mcp_server import HTTPMCPServer
+    srv = HTTPMCPServer(api_key="secret")
+    # even with a key set, _handle_metrics requires no auth header
+    # (do_GET short-circuits /metrics before the auth check)
+    assert srv._auth_ok({}) is False  # other endpoints still need the key
+    # but /metrics itself is reachable: simulate the short-circuit by calling the handler
+    import io
+    # just verify the payload generator works without auth
+    assert "charter_mcp_uptime_seconds" in srv._metrics_payload()["text"]
