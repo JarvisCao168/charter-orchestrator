@@ -126,7 +126,7 @@ class JudgePoolAutoscaler:
                  ) -> Dict[str, Any]:
         """A KEDA ScaledObject with *multiple* triggers + a cost-ceiling
         metadata block."""
-        triggers = [t for t in triggers if t in _TRIGGERS] or \
+        triggers = [t for t in (triggers or []) if t in _TRIGGERS] or \
             ["pending-judge-tasks"]
         trig_docs: List[Dict[str, Any]] = []
         for t in triggers:
