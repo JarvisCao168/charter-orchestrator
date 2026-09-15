@@ -23,7 +23,7 @@ jobs:
         run: python scripts/validate_skills.py
       - name: Run executable tests
         run: python -m pytest tests/ -v
-      - name: Debug: list failures + key errors (TEMP)
+      - name: "Debug: list failures and key errors (TEMP)"
         run: |
           echo "===== FAILED TESTS ====="
           python -m pytest tests/ -q 2>&1 | grep -E "FAILED|ERROR" || echo "(none reported)"
