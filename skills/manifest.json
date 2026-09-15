@@ -1,5 +1,5 @@
 {
-  "version": "3.2.0",
+  "version": "3.11.0",
   "framework": "Charter Orchestrator",
   "tools": [
     "init_project",
@@ -23,7 +23,7 @@
     "trace_operation",
     "query_trace"
   ],
-  "skill_count": 107,
+  "skill_count": 111,
   "tools_count": 20,
   "skills": {
     "env_01": {
@@ -1848,6 +1848,63 @@
         "report"
       ],
       "module": "charter.tools"
+    },
+    "gov_01": {
+      "name": "ValidationGateway",
+      "category": "governance",
+      "tools": [],
+      "path": "skills/governance/gov_01/SKILL.md",
+      "inputs": [
+        "output",
+        "schema",
+        "upstream"
+      ],
+      "outputs": [
+        "verdict",
+        "incidents"
+      ]
+    },
+    "gov_02": {
+      "name": "CriticAgent",
+      "category": "governance",
+      "tools": [],
+      "path": "skills/governance/gov_02/SKILL.md",
+      "inputs": [
+        "plan",
+        "outputs"
+      ],
+      "outputs": [
+        "findings",
+        "repairs"
+      ]
+    },
+    "gov_03": {
+      "name": "SemanticTrace",
+      "category": "governance",
+      "tools": [],
+      "path": "skills/governance/gov_03/SKILL.md",
+      "inputs": [
+        "input_text",
+        "output_text"
+      ],
+      "outputs": [
+        "similarity",
+        "verdict"
+      ]
+    },
+    "gov_04": {
+      "name": "ModelRouter",
+      "category": "governance",
+      "tools": [],
+      "path": "skills/governance/gov_04/SKILL.md",
+      "inputs": [
+        "task_profile"
+      ],
+      "outputs": [
+        "tier",
+        "model",
+        "cache_hit"
+      ]
     }
   }
 }
