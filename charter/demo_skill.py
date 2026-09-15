@@ -17,7 +17,7 @@ import os
 import sys
 from typing import Any, Dict, List
 
-__all__ = ["run_demo_skill", "list_demo_skills", "DEMO_SKILLS", "main"]
+__all__ = ["run_demo_skill", "list_demo_skills", "DEMO_SKILLS", "run_all_demos", "main"]
 
 # ---------------------------------------------------------------------------
 # Skill -> real-module-chain demos
@@ -218,13 +218,90 @@ def list_demo_skills() -> List[Dict[str, Any]]:
     return out
 
 
+def run_all_demos(as_json: bool = True) -> Dict[str, Any]:
+    """Run every bespoke demo chain and return a consolidated report.
+
+    Iterates ``DEMO_SKILLS`` (deduplicated by runner so the 6 chain-groups
+    run once each), executes the real module chain, and aggregates:
+    total / ok / failed counts plus a per-chain breakdown and per-skill
+    status map. A chain failing does not stop the others.
+    """
+    manifest = _load_manifest()
+    # Dedupe by runner so each chain-group runs once, but remember all skill ids
+    seen_runners: Dict[int, str] = {}
+    ordered_groups: List[str] = []
+    for sid in sorted(DEMO_SKILLS.keys()):
+        runner = DEMO_SKILLS[sid]
+        key = id(runner)
+        if key not in seen_runners:
+            seen_runners[key] = sid
+            ordered_groups.append(sid)
+
+    chains: List[Dict[str, Any]] = []
+    per_skill: Dict[str, bool] = {}
+    total, ok_count, fail_count = 0, 0, 0
+
+    for representative in ordered_groups:
+        runner = DEMO_SKILLS[representative]
+        sids = sorted(sid for sid in DEMO_SKILLS if DEMO_SKILLS[sid] is runner)
+        meta = manifest.get("skills", {}).get(representative, {})
+        try:
+            result = runner()
+            ok = True
+            error = None
+        except Exception as e:
+            ok = False
+            error = str(e)
+            result = None
+        total += len(sids)
+        ok_count += len(sids) if ok else 0
+        fail_count += 0 if ok else len(sids)
+        for sid in sids:
+            per_skill[sid] = ok
+        chains.append({
+            "chain": representative,
+            "module": meta.get("module"),
+            "skills": sids,
+            "ok": ok,
+            "error": error,
+            "result": result if ok else None,
+        })
+
+    return {
+        "ok": fail_count == 0,
+        "total_skills": total,
+        "passed": ok_count,
+        "failed": fail_count,
+        "chains": chains,
+        "per_skill": per_skill,
+    }
+
+
 def main(argv: List[str]) -> int:
     import argparse
     parser = argparse.ArgumentParser(description="Run a Charter skill's real module chain")
     parser.add_argument("skill", nargs="?", help="skill id (e.g. obs_09)")
     parser.add_argument("--list", action="store_true", help="list skills with bespoke demos")
     parser.add_argument("--json", action="store_true", help="emit JSON")
+    parser.add_argument("--all", action="store_true",
+                        help="run every bespoke demo chain and print a consolidated report")
     args = parser.parse_args(argv)
+
+    if args.all:
+        report = run_all_demos()
+        if args.json:
+            print(json.dumps(report, ensure_ascii=False, default=str, indent=2))
+        else:
+            print(f"=== Charter demo-skill: all bespoke chains ===")
+            print(f"  skills covered: {report['total_skills']} (deduped by {len(report['chains'])} chains)")
+            print(f"  passed: {report['passed']}  failed: {report['failed']}  "
+                  f"overall: {'PASS' if report['ok'] else 'FAIL'}")
+            for c in report["chains"]:
+                mark = "OK  " if c["ok"] else "FAIL"
+                extra = f"  ({c['error']})" if c.get("error") else ""
+                print(f"  [{mark}] {c['chain']:8s} {c.get('module') or ''}  "
+                      f"skills={','.join(c['skills'])}{extra}")
+        return 0 if report["ok"] else 1
 
     if args.list:
         for e in list_demo_skills():
