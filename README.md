@@ -6,7 +6,7 @@
 >
 > 定义 Agent 怎么干活、干到什么标准、什么时候该停下来让人确认
 
-[![Version](https://img.shields.io/badge/version-3.9.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
+[![Version](https://img.shields.io/badge/version-3.10.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Skill Definition](https://img.shields.io/badge/Skill-v2.1.0-green.svg)](SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
@@ -178,6 +178,23 @@ python -m charter.mcp_server     # stdio JSON-RPC
   ```
 - 394 测试（原 383 + 3 工具结果 read + 8 range 聚合 + 1 版本净增 + 2 调整），3.9 / 3.11 / 3.12 全绿。
 
+
+## 🧠 v3.10 — MCP 推送携带 last_result 全文 + demo-skill watch --snapshot 持久化
+
+- **MCP 推送携带全文**：`_tool_result_payload(tool_name)` 构建与 `resources/read`
+  同构的 JSON 载荷；`tools/call` 触发的 `resources/changed` 事件现带 `last_result`
+  字段（完整结果），订阅者免再发 `resources/read` —— 呼应多 Agent 一致性分析
+  中"事件溯源：状态由事件流派生、可追溯、解耦"的轻量落地。
+- **demo-skill watch `--snapshot`**：`_snapshot_watch_report(report, path, ...)`
+  把本轮 watch 报告（SLO 历史 / 告警 / OnCall+Alertmanager 投递 receipt /
+  Prometheus 查询）落盘 JSON 快照，自动建父目录，写失败不丢报告；契合
+  "时间旅行调试 / 重放事件流复现 Bug"。CLI：`--snapshot PATH`（对 `--watch` 与
+  `--promql` 都生效）。
+  ```bash
+  python -m charter.demo_skill --watch --iterations 3 --slo-pct 90 \
+      --snapshot ./audit/watch-$(date +%s).json
+  ```
+- 402 测试（原 394 + 3 推送全文 + 5 --snapshot + 1 版本净增 + 3 调整），3.9 / 3.11 / 3.12 全绿。
 
 ## 目录 / Table of Contents
 
