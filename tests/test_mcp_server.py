@@ -26,7 +26,7 @@ from charter.mcp_server import (
 
 
 def test_version_is_v3_5():
-    assert __version__.startswith("3.10")
+    assert __version__.startswith("3.11")
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +93,7 @@ def test_run_tool_query_status():
 def test_run_tool_list_skills():
     out = run_tool("list_skills", {})
     assert out["ok"], out
-    assert out["result"]["total"] == 107, f"expected 47 skills, got {out['result']['total']}"
+    assert out["result"]["total"] == 111, f"expected 111 skills, got {out['result']['total']}"
 
 
 def test_run_tool_list_skills_category_filter():
@@ -199,7 +199,7 @@ def test_mcp_server_resources_list():
     server = CharterMCPServer()
     resp = server.handle({"jsonrpc": "2.0", "id": 5, "method": "resources/list", "params": {}})
     resources = resp["result"]["resources"]
-    assert len(resources) == 108, f"expected 108 resources (107 skills + metrics), got {len(resources)}"
+    assert len(resources) == 112, f"expected 112 resources (111 skills + metrics), got {len(resources)}"
     for res in resources:
         assert res["uri"].startswith("charter://skills/") or \
                res["uri"] == "charter://metrics", f"unexpected URI: {res['uri']}"
@@ -260,10 +260,10 @@ def test_http_mcp_server_importable():
 def test_http_server_construction():
     from charter.mcp_server import HTTPMCPServer
     srv = HTTPMCPServer(host="127.0.0.1", port=8799)
-    # It wraps a CharterMCPServer and builds 108 resources (107 skills + metrics)
+    # It wraps a CharterMCPServer and builds 112 resources (111 skills + metrics)
     assert hasattr(srv, "_server")
     resources = srv._server._resource_list
-    assert len(resources) == 108, f"expected 108 resources (107 skills + metrics), got {len(resources)}"
+    assert len(resources) == 112, f"expected 112 resources (111 skills + metrics), got {len(resources)}"
     # all URIs are well-formed
     for r in resources:
         assert r["uri"].startswith("charter://skills/") or \
@@ -283,14 +283,14 @@ def test_mcp_tools_endpoint_shape():
 
 
 def test_new_skills_have_valid_paths():
-    """All 107 manifest entries point to a file that exists on disk."""
+    """All 111 manifest entries point to a file that exists on disk."""
     import os
     base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     manifest_path = os.path.join(base, "skills", "manifest.json")
     with open(manifest_path, encoding="utf-8") as f:
         manifest = json.load(f)
     skills = manifest["skills"]
-    assert len(skills) == 107
+    assert len(skills) == 111
     for sid, meta in skills.items():
         p = os.path.join(base, meta["path"])
         assert os.path.isfile(p), f"missing skill file: {meta['path']}"
