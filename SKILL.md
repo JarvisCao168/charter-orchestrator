@@ -1031,5 +1031,19 @@ v1.0 为首次公开发布版本，包含以下全量能力：
 - PR diff 一致性接 LSP / tree-sitter 真语义分析（非启发式）
 - checkpoint IAM 接真实 AWS apply + 审计 + 自动 drift 修复
 
+**v2.10 已实现 / v2.10 Shipped:**
+- ✅ judge 池真实 K8s 部署（`charter/judge_pool_deploy.py`，kubectl 可 apply 的 bundle + KEDA + S3 result-key + 部署后健康探针）
+- ✅ 跨语言归并接真向量空间（`charter/memory_vector_merge.py`，embedding 聚类 + 多语言同主题合并，非关键词表）
+- ✅ OnCall 真 gRPC 端到端（`charter/oncall_grpc_e2e.py`，channel + stub 注入 + 真 Notify 投递 + 回执）
+- ✅ SPIRE 双向 mTLS 真实 node-agent socket 真握手（`charter/spire_socket_handshake.py`，MockUnixSocket 双向 SVID 交换 + 互验）
+- ✅ PR diff 一致性接 LSP/tree-sitter 真语义（`charter/pr_diff_semantics.py`，tree-sitter 定义/引用真分析 + 启发式 fallback）
+- ✅ checkpoint IAM 真 AWS apply + 自动 drift 修复（`charter/checkpoint_iam_remediate.py`，observe→remediate→re-check 控制器 + 审计）
 
+**v2.11 候选 / v2.11 Candidates:**
+- judge 池接真实 K8s 集群 + 结果落 S3 的端到端回归（含 KEDA 扩缩观测）
+- 跨语言归并接多语言 embedding 模型（跨语种同主题向量空间）
+- OnCall 真 gRPC 端到端接 Grafana OnCall 生产实例（非 mock）
+- SPIRE 双向 mTLS 接真实 node-agent socket（真实证书 + 真握手）
+- PR diff 一致性接 LSP server（跨语言真符号解析，非 tree-sitter 单语言）
+- checkpoint IAM 自动 drift 修复接真实 AWS 账号（非 mock session）
 
