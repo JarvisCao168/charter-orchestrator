@@ -707,3 +707,39 @@ Install: `pip install charter-orchestrator` (stdlib-only core). Optional extras:
   `charter/checkpoint_iam.py`: `iam_policy` (per-role IAM docs) +
   `s3_bucket_policy` (deny-default + per-role allow with team tag) +
   `render_iam_bundle`, all JSON-ready for the AWS console / CLI.
+## v2.9 — Multi-System Linkages (Phase 6)
+
+- **Judge pool multi-trigger + cost-aware autoscaling** —
+  `charter/judge_pool_cost.py`: `JudgePoolAutoscaler` plans a KEDA
+  ScaledObject with multiple triggers (pending-task queue, Prometheus rule
+  breach, calendar window, burst) and a **cost ceiling** that caps
+  `maxReplicas` to a $ budget; `render_cost_autoscaler` emits the KEDA doc +
+  a scale-decision table across budgets.
+- **Cross-language automatic merging of memory clusters** —
+  `charter/memory_cross_language.py`: `detect_topic_keywords` (CJK→roman
+  technical-term table + Latin content words) so a zh "数据库连接池调优"
+  cluster merges with an en "database connection pool tuning" cluster;
+  `cross_language_merge` + `merge_cross_language` merge clusters across
+  languages (keyword Jaccard or centroid cosine) into one.
+- **Grafana OnCall real gRPC channel delivery** —
+  `charter/oncall_grpc_deliver.py`: `OnCallGRPCClient.deliver` invokes the
+  `oncall.OnCallService.Notify` RPC when a gRPC channel + stub are bound;
+  `render_oncall_grpc_stubs` emits the service / method stubs + channel
+  config. Offline-safe (plan-only without a channel).
+- **k8s SPIRE bidirectional mTLS regression test** —
+  `charter/spire_bidir_regression.py`: `MockNodeAgent` + `MockWorkload`
+  drive the two-way handshake against a reference implementation;
+  `run_bidir_mtls_regression` checks 6 invariants (both SVIDs under the
+  trust domain, mutual verify-peer, same trust domain, socket under the
+  mount).
+- **PR diff cross-file + cross-hunk consistency** —
+  `charter/pr_diff_consistency.py`: `CrossHunkConsistency.detect` catches
+  unpropagated renames, removed definitions still used, and conflicting
+  `after` blocks on the same hunk; `reconcile_hunks` applies the
+  reconciliation (rename propagation, re-introduce, keep the longest);
+  `cross_file_summary` is a per-file digest of the blast radius.
+- **Checkpoint IAM real AWS apply + audit** —
+  `charter/checkpoint_iam_apply.py`: `IamApplier.apply` creates the per-role
+  IAM roles + attaches the policies + puts the S3 bucket policy via boto3
+  (dry-run when no session); `IamAuditLog` records every mutation;
+  `iam_drift_report` reads the live state.
