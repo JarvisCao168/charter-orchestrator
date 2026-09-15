@@ -6,7 +6,7 @@
 >
 > 定义 Agent 怎么干活、干到什么标准、什么时候该停下来让人确认
 
-[![Version](https://img.shields.io/badge/version-3.6.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
+[![Version](https://img.shields.io/badge/version-3.7.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Skill Definition](https://img.shields.io/badge/Skill-v2.1.0-green.svg)](SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
@@ -132,6 +132,19 @@ python -m charter.mcp_server     # stdio JSON-RPC
   `oncall_grpc_e2e` 真正投递到 Grafana OnCall（gRPC）；无 `grpc` 时降级 plan-only
   receipt，CI 仍绿。CLI：`make demo-skill SKILL=--watch --oncall-target ...`。
 - 361 测试（原 352 + 5 + 4 + 1），3.9 / 3.11 / 3.12 全绿。
+
+
+## ⚡ v3.7 — MCP resources/changed 主动通知 + watch 接 Alertmanager webhook
+
+- **MCP 资源变更推送**：`notify_resource_changed()` + `_broadcast_metrics_change()`，
+  订阅 `charter://metrics` 的 SSE client 在每次请求计数变化时收到
+  `notifications/resources/updated` 事件（含最新 Prometheus 快照）。
+- **SSE metrics 事件驱动**：`/mcp/sse?stream=metrics` 先推初始快照，之后阻塞等
+  push 事件（30s keepalive），替代 v3.6 的 5s 轮询循环。
+- **demo-skill watch 接 Alertmanager**：`run_watch(alertmanager_url=...)` 把 SLO 告警
+  以 Alertmanager v4 JSON 格式 POST 到 webhook（`_post` seam 可注入测试桩 / 认证传输），
+  网络失败降级 plan-only，CI 仍绿。CLI：`--alertmanager-url ... --alertmanager-timeout N`。
+- 372 测试（原 361 + 6 MCP 事件通知 + 5 Alertmanager + 1 版本净增），3.9 / 3.11 / 3.12 全绿。
 
 
 ## 目录 / Table of Contents
