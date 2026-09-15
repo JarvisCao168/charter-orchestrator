@@ -28,7 +28,7 @@ __all__ = [
     "list_mcp_tools",
     "load_skill",
     "run_tool",
-    "main",
+    "main", "HTTPMCPServer", "run_http_server",
 ]
 
 # ---------------------------------------------------------------------------
@@ -546,7 +546,7 @@ def load_skill(skill_id: str) -> Dict[str, Any]:
 
 MCP_SERVER_INFO = {
     "name": "charter-orchestrator",
-    "version": "3.0.0",
+    "version": "3.2.0",
     "description": "Full-lifecycle governance & orchestration framework for AI agents. "
                    "Exposes 20 governance tools and 47 structured skills with "
                    "enforceable gates, TDD, guardrails, and human-confirmation points.",
@@ -682,6 +682,173 @@ def main() -> None:
         if resp is not None:
             sys.stdout.write(json.dumps(resp, ensure_ascii=False) + "\n")
             sys.stdout.flush()
+
+
+
+# ---------------------------------------------------------------------------
+# SSE / HTTP transport (optional, for remote MCP clients)
+# ---------------------------------------------------------------------------
+#
+# The stdio transport is the default (zero-dependency). For remote mounting
+# (Claude Desktop web, Codex remote, or a network-attached agent harness),
+# an optional HTTP + SSE transport is provided using ONLY the stdlib
+# ``http.server`` module — no ``mcp`` SDK, no ``fastapi``/``aiohttp``.
+#
+#   from charter.mcp_server import run_http_server
+#   run_http_server(host="127.0.0.1", port=8765)
+#
+# Endpoints (JSON-RPC 2.0, same semantics as the stdio server):
+#   GET  /mcp/sse          - SSE stream: emits the initial "endpoint" event
+#                            carrying the POST URL, then relays server->client
+#                            notifications (ping / tool progress).
+#   POST /mcp/message      - JSON-RPC request body; the JSON-RPC response is
+#                            pushed back over the SSE stream (event "message").
+#   GET  /mcp/health       - liveness probe (200 + server info).
+#   GET  /mcp/tools        - convenience: returns the 20 tool definitions.
+#
+# The transport is process-local: one CharterMCPServer instance backs all
+# connections; a thread-safe queue bridges POST responses to the SSE stream.
+
+import threading
+import queue
+import http.server
+import socketserver
+
+
+class HTTPMCPServer:
+    """HTTP + SSE wrapper around a :class:`CharterMCPServer`."""
+
+    def __init__(self, host: str = "127.0.0.1", port: int = 8765) -> None:
+        self.host = host
+        self.port = port
+        self._server = CharterMCPServer()
+        self._lock = threading.Lock()
+        # Per-client SSE queues keyed by a client id.
+        self._client_queues: Dict[str, "queue.Queue"] = {}
+        self._clients_lock = threading.Lock()
+        self._next_client = 0
+
+    # -- client registration ------------------------------------------------
+    def _new_client(self) -> str:
+        with self._clients_lock:
+            self._next_client += 1
+            cid = f"c{self._next_client}"
+            self._client_queues[cid] = queue.Queue()
+            return cid
+
+    def _drop_client(self, cid: str) -> None:
+        with self._clients_lock:
+            self._client_queues.pop(cid, None)
+
+    # -- HTTP handler --------------------------------------------------------
+    def _make_handler(self):
+        outer = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args):  # silence default stderr logging
+                return
+
+            def _send_json(self, code: int, obj: Any) -> None:
+                body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self):
+                if self.path == "/mcp/health":
+                    self._send_json(200, {"ok": True, "server": MCP_SERVER_INFO})
+                elif self.path == "/mcp/tools":
+                    self._send_json(200, {"tools": list_mcp_tools()})
+                elif self.path == "/mcp/sse":
+                    self._sse_stream()
+                else:
+                    self._send_json(404, {"error": "not found"})
+
+            def do_POST(self):
+                if self.path == "/mcp/message":
+                    self._handle_message()
+                else:
+                    self._send_json(404, {"error": "not found"})
+
+            def _sse_stream(self):
+                cid = outer._new_client()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "keep-alive")
+                self.end_headers()
+                # initial event: tell the client where to POST
+                post_url = f"/mcp/message?client={cid}"
+                self.wfile.write(f"event: endpoint\ndata: {post_url}\n\n".encode())
+                self.wfile.flush()
+                q = outer._client_queues[cid]
+                try:
+                    while True:
+                        try:
+                            item = q.get(timeout=15)
+                        except queue.Empty:
+                            # keepalive comment so proxies don't time out
+                            self.wfile.write(b": keepalive\n\n")
+                            self.wfile.flush()
+                            continue
+                        if item is None:
+                            break
+                        self.wfile.write(
+                            f"event: message\ndata: {item}\n\n".encode())
+                        self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                finally:
+                    outer._drop_client(cid)
+
+            def _handle_message(self):
+                length = int(self.headers.get("Content-Length", 0))
+                raw = self.rfile.read(length) if length else b"{}"
+                try:
+                    msg = json.loads(raw.decode("utf-8"))
+                except Exception:
+                    resp = CharterMCPServer._error(None, -32700, "parse error")
+                    self._send_json(400, resp)
+                    return
+                # parse the client id from the query string
+                from urllib.parse import urlparse, parse_qs
+                q = parse_qs(urlparse(self.path).query)
+                cid = (q.get("client") or ["default"])[0]
+                resp = outer._server.handle(msg)
+                if resp is None:
+                    self.send_response(202)  # accepted, no response (notification)
+                    self.end_headers()
+                    return
+                if cid in outer._client_queues:
+                    outer._client_queues[cid].put(json.dumps(resp, ensure_ascii=False))
+                self.send_response(202)  # accepted; result delivered via SSE
+                self.end_headers()
+
+        return Handler
+
+    def run(self) -> None:
+        handler = self._make_handler()
+
+        class ThreadingServer(socketserver.ThreadingMixIn,
+                              http.server.HTTPServer):
+            daemon_threads = True
+
+        ThreadingServer.allow_reuse_address = True
+        httpd = ThreadingServer((self.host, self.port), handler)
+        print(f"Charter MCP HTTP+SSE server on http://{self.host}:{self.port}/mcp/sse")
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            httpd.server_close()
+
+
+def run_http_server(host: str = "127.0.0.1", port: int = 8765) -> None:
+    """Start the optional HTTP + SSE MCP transport (stdlib-only)."""
+    HTTPMCPServer(host=host, port=port).run()
 
 
 if __name__ == "__main__":
