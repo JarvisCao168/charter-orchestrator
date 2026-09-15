@@ -6,7 +6,7 @@
 >
 > 定义 Agent 怎么干活、干到什么标准、什么时候该停下来让人确认
 
-[![Version](https://img.shields.io/badge/version-3.3.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
+[![Version](https://img.shields.io/badge/version-3.4.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Skill Definition](https://img.shields.io/badge/Skill-v2.1.0-green.svg)](SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
@@ -95,6 +95,17 @@ python -m charter.mcp_server     # stdio JSON-RPC
   make list-skill                        # 列出有 bespoke demo 的 28 个 skill
   ```
 - 334 测试（原 260 + 60 skill + 9 demo-skill + 调整），3.9 / 3.11 / 3.12 全绿。
+
+
+## 🔐 v3.4 — demo-skill --all + MCP X-API-Key 鉴权
+
+- **`make demo-skill SKILL=... --all`**：`run_all_demos()` 一次跑全部 6 类 bespoke 链路
+  （SLO→OnCall / Judge Pool / Memory / mTLS+SPIFFE / PR diff / IAM+RBAC），失败不中断，
+  返回 `total/passed/failed/chains/per_skill` 汇总；`--json` 出机器可读报告。
+- **MCP SSE/HTTP X-API-Key 鉴权**：`HTTPMCPServer` / `run_http_server` 支持
+  `api_key=` 参数或 `CHARTER_MCP_API_KEY` 环境变量，网关所有 `/mcp/*` 端点；
+  未配置时保持开放（向后兼容）。常数时间比较防时序泄露。
+- 348 测试（原 334 + 7 demo +4 auth +3 版本调整），3.9 / 3.11 / 3.12 全绿。
 
 
 ## 目录 / Table of Contents
