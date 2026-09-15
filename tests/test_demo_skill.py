@@ -22,8 +22,8 @@ from charter.demo_skill import (
 )
 
 
-def test_version_is_v3_3():
-    assert __version__.startswith("3.3")
+def test_version_is_v3_4():
+    assert __version__.startswith("3.4")
 
 
 def test_list_demo_skills_well_formed():
@@ -90,4 +90,38 @@ def test_main_unknown_skill_exits_nonzero():
 
 def test_main_valid_skill_exits_zero():
     rc = main(["obs_09", "--json"])
+    assert rc == 0
+
+
+# ---------------------------------------------------------------------------
+# --all: run_all_demos consolidated report (v3.4)
+# ---------------------------------------------------------------------------
+
+from charter.demo_skill import run_all_demos
+
+
+def test_run_all_demos_covers_bespoke_chains():
+    report = run_all_demos()
+    # every bespoke chain runs and the report is self-consistent
+    assert report["total_skills"] >= 10
+    assert report["passed"] + report["failed"] == report["total_skills"]
+    assert report["ok"] in (True, False)
+    # each chain entry is well-formed
+    for c in report["chains"]:
+        assert c["ok"] in (True, False)
+        assert isinstance(c["skills"], list) and c["skills"]
+        # a passing chain carries its real module-chain result
+        if c["ok"]:
+            assert c["result"] is not None
+
+
+def test_run_all_demos_all_bespoke_pass():
+    report = run_all_demos()
+    # all 6 bespoke chain-groups succeed offline
+    assert report["failed"] == 0, report["chains"]
+    assert report["ok"] is True
+
+
+def test_main_all_exits_zero():
+    rc = main(["--all"])
     assert rc == 0
