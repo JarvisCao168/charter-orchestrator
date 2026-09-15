@@ -17,7 +17,8 @@ import os
 import sys
 from typing import Any, Dict, List
 
-__all__ = ["run_demo_skill", "list_demo_skills", "DEMO_SKILLS", "run_all_demos", "main"]
+__all__ = ["run_demo_skill", "list_demo_skills", "DEMO_SKILLS", "run_all_demos",
+           "run_watch", "main"]
 
 # ---------------------------------------------------------------------------
 # Skill -> real-module-chain demos
@@ -277,6 +278,88 @@ def run_all_demos(as_json: bool = True) -> Dict[str, Any]:
     }
 
 
+def _eval_slo(report: Dict[str, Any], slo_pct_threshold: float) -> Dict[str, Any]:
+    """Evaluate the run against an availability-style SLO.
+
+    A "run" passes the SLO when the fraction of skills that returned ok=True
+    is at or above ``slo_pct_threshold``. Returns the computed ratio, the
+    verdict, and whether an alert should fire (ratio below threshold).
+    """
+    total = report.get("total_skills") or 1
+    passed = report.get("passed") or 0
+    ratio = round(passed / total, 4) if total else 0.0
+    threshold = slo_pct_threshold / 100.0
+    met = ratio >= threshold
+    return {
+        "ratio": ratio,
+        "threshold": slo_pct_threshold,
+        "met": met,
+        "alert": not met,
+    }
+
+
+def run_watch(iterations: int = 3,
+              slo_pct_threshold: float = 90.0,
+              as_json: bool = False,
+              _sleep_s: float = 0.0) -> Dict[str, Any]:
+    """Continuously run every bespoke demo chain and watch the SLO.
+
+    Each iteration re-runs ``run_all_demos()`` (the real module chains),
+    evaluates the pass ratio against an availability SLO
+    (``slo_pct_threshold``, percent of skills expected to pass), and fires an
+    alert (structured record) when the ratio drops below it. With
+    ``iterations=1`` this is a single-shot watch; with more, a small
+    continuous window is produced. ``_sleep_s`` is a test seam so callers can
+    force immediate iteration without real sleeping.
+
+    Returns a watch report: per-iteration SLO status, the worst ratio seen,
+    and the list of fired alerts.
+    """
+    iterations = max(1, int(iterations))
+    history: List[Dict[str, Any]] = []
+    alerts: List[Dict[str, Any]] = []
+    worst_ratio = 1.0
+
+    for i in range(1, iterations + 1):
+        report = run_all_demos(as_json=True)
+        slo = _eval_slo(report, slo_pct_threshold)
+        entry = {
+            "iteration": i,
+            "total_skills": report.get("total_skills"),
+            "passed": report.get("passed"),
+            "failed": report.get("failed"),
+            "slo": slo,
+        }
+        history.append(entry)
+        if slo["alert"]:
+            alerts.append({
+                "iteration": i,
+                "severity": "warning" if slo["ratio"] >= 0.75 else "critical",
+                "slo_pct_threshold": slo_pct_threshold,
+                "observed_ratio": slo["ratio"],
+                "message": (
+                    f"demo-skill watch SLO breach: only {slo['ratio']*100:.1f}% "
+                    f"of skills passed (threshold {slo_pct_threshold}%)"
+                ),
+                "failed_skills": [
+                    sid for sid, ok in report.get("per_skill", {}).items() if not ok
+                ],
+            })
+        worst_ratio = min(worst_ratio, slo["ratio"])
+        if _sleep_s and i < iterations:
+            import time as _time
+            _time.sleep(_sleep_s)
+
+    return {
+        "iterations": iterations,
+        "slo_pct_threshold": slo_pct_threshold,
+        "history": history,
+        "alerts": alerts,
+        "worst_ratio": worst_ratio,
+        "slo_met": not alerts,
+    }
+
+
 def main(argv: List[str]) -> int:
     import argparse
     parser = argparse.ArgumentParser(description="Run a Charter skill's real module chain")
@@ -285,7 +368,34 @@ def main(argv: List[str]) -> int:
     parser.add_argument("--json", action="store_true", help="emit JSON")
     parser.add_argument("--all", action="store_true",
                         help="run every bespoke demo chain and print a consolidated report")
+    parser.add_argument("--watch", action="store_true",
+                        help="continuously run every bespoke demo chain and watch the SLO")
+    parser.add_argument("--iterations", type=int, default=3,
+                        help="how many watch iterations to run (default 3)")
+    parser.add_argument("--slo-pct", type=float, default=90.0,
+                        help="availability SLO threshold, percent of skills that must pass (default 90)")
     args = parser.parse_args(argv)
+
+    if args.watch:
+        report = run_watch(iterations=args.iterations, slo_pct_threshold=args.slo_pct)
+        if args.json:
+            print(json.dumps(report, ensure_ascii=False, default=str, indent=2))
+        else:
+            print(f"=== Charter demo-skill watch: {report['iterations']} iterations, "
+                  f"SLO {report['slo_pct_threshold']}% ===")
+            for h in report["history"]:
+                slo = h["slo"]
+                verdict = "MET" if slo["met"] else "BREACH"
+                print(f"  iter {h['iteration']}: {h['passed']}/{h['total_skills']} passed "
+                      f"(ratio {slo['ratio']:.3f}) [{verdict}]")
+            if report["alerts"]:
+                print(f"  ALERTS ({len(report['alerts'])}):")
+                for a in report["alerts"]:
+                    print(f"    [{a['severity'].upper()}] {a['message']} "
+                          f"(failed: {','.join(a['failed_skills']) or 'none'})")
+            print(f"  overall SLO: {'MET' if report['slo_met'] else 'BREACHED'} "
+                  f"(worst ratio {report['worst_ratio']:.3f})")
+        return 0 if report["slo_met"] else 1
 
     if args.all:
         report = run_all_demos()
