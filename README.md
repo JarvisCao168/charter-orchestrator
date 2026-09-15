@@ -6,7 +6,7 @@
 >
 > 定义 Agent 怎么干活、干到什么标准、什么时候该停下来让人确认
 
-[![Version](https://img.shields.io/badge/version-3.1.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
+[![Version](https://img.shields.io/badge/version-3.2.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Skill Definition](https://img.shields.io/badge/Skill-v2.1.0-green.svg)](SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
@@ -62,6 +62,21 @@ python -m charter.mcp_server     # stdio JSON-RPC
   `enable_autonomous_mode`, `trace_operation`, `query_trace`
 - **47 skills** as MCP resources (`charter://skills/<id>`), each with I/O contract
 - **SKILL.md** upgraded to Anthropic-compatible YAML frontmatter (native Claude Code discovery)
+
+
+## 📦 v3.2 — 107 Skills + MCP SSE/HTTP
+
+- **Skills: 47 → 107** — 60 new structured skills mapped to the 58 charter modules
+  (dev +8, security +8, obs +10, collab +8, analysis +6, test +6, deploy +8, tool +6).
+  Each carries a `module` ref to the exact Python module that operationalizes it.
+- **MCP SSE/HTTP transport** — optional stdlib-only HTTP+SSE server alongside the default
+  stdio transport:
+  ```bash
+  python -c "from charter.mcp_server import run_http_server; run_http_server('0.0.0.0', 8765)"
+  # GET /mcp/health · GET /mcp/tools · GET /mcp/sse · POST /mcp/message?client=<cid>
+  ```
+- `scripts/validate_skills.py` enforces the 107-skill invariant in CI.
+- 292 tests, all green on 3.9 / 3.11 / 3.12.
 
 
 ## 目录 / Table of Contents
