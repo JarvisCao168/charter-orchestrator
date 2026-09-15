@@ -25,8 +25,8 @@ from charter.mcp_server import (
 )
 
 
-def test_version_is_v3_2():
-    assert __version__.startswith("3.2")
+def test_version_is_v3_3():
+    assert __version__.startswith("3.3")
 
 
 # ---------------------------------------------------------------------------
