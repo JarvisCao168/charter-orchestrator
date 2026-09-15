@@ -596,6 +596,13 @@ class CharterMCPServer:
         import threading as _th
         self._tool_results: Dict[str, Dict[str, Any]] = {}  # tool_name -> last outcome
         self._tool_results_lock = _th.Lock()
+        # v3.11: optional governance hooks attached by the operator:
+        #   - semantic_tracer: records input->output similarity for every tools/call
+        #   - gateway: a ValidationGateway that gates tool outputs
+        #   - circuit_breaker: a per-server CircuitBreaker for the tool pipeline
+        self.semantic_tracer = None
+        self.gateway = None
+        self.circuit_breaker = None
 
     def _build_resources(self) -> None:
         import json as _json
@@ -749,6 +756,24 @@ class CharterMCPServer:
             tool_name = params.get("name", "")
             args = params.get("arguments", {})
             outcome = run_tool(tool_name, args)
+            # v3.11: gate the tool output through the validation gateway when one
+            # is attached (schema + data-alignment + consistency). On a failed
+            # gate the outcome is degraded (not discarded) and the incident is
+            # recorded, mirroring the "don't crash the chain" policy.
+            gate_upstream = self._shared_upstream if hasattr(self, "_shared_upstream") else None
+            gate_context = self._shared_context if hasattr(self, "_shared_context") else None
+            if self.gateway is not None:
+                gated = self.gateway.check_with_retry(lambda: outcome,
+                                                      upstream=gate_upstream,
+                                                      context=gate_context)
+                outcome = gated
+            # v3.11: record a semantic span so input->output drift is traceable.
+            if self.semantic_tracer is not None:
+                self.semantic_tracer.record(
+                    span_id=None,
+                    input_text=json.dumps(args, ensure_ascii=False),
+                    output_text=text,
+                    tool=tool_name)
             text = json.dumps(outcome, ensure_ascii=False, default=str)
             # v3.9: remember the last result so resources/read can expose it.
             with self._tool_results_lock:
