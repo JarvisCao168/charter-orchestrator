@@ -1,6 +1,6 @@
-# v2.10.0 — Multi-System Linkages (Phase 7)
+# v3.0.0 — Multi-System Linkages (Phase 7)
 
-Charter Orchestrator v2.10.0 wires the v2.2–v2.9 "real system" candidates
+Charter Orchestrator v3.0.0 wires the v2.2–v2.9 "real system" candidates
 to live infrastructure: a K8s judge-pool deployment bundle, vector-space
 cross-language memory merging, real OnCall gRPC end-to-end delivery, a
 mock-socket SPIRE bidirectional-mTLS handshake, tree-sitter PR diff
