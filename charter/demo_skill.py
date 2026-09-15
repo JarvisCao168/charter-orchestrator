@@ -19,7 +19,8 @@ from typing import Any, Dict, List, Optional
 
 __all__ = ["run_demo_skill", "list_demo_skills", "DEMO_SKILLS", "run_all_demos",
            "run_watch", "main", "_deliver_oncall", "_deliver_alertmanager",
-           "_query_prometheus", "run_watch_from_promql"]
+           "_query_prometheus", "run_watch_from_promql",
+           "_query_prometheus_range", "_aggregate_range_values"]
 
 # ---------------------------------------------------------------------------
 # Skill -> real-module-chain demos
@@ -452,6 +453,156 @@ def _query_prometheus(base_url: str, promql: str,
         return {"ok": False, "status": 0, "data": None, "error": str(exc)}
 
 
+def _query_prometheus_range(base_url: str, promql: str,
+                            start: str, end: str, step: str,
+                            _query=None) -> Dict[str, Any]:
+    """Run a Prometheus range query over [start, end] with the given step.
+
+    When ``_query`` is supplied it is used (test seam); otherwise the stdlib
+    ``urllib`` GETs ``{base_url}/api/v1/query_range`` with
+    ``start``, ``end``, ``step``.
+    Returns ``{"ok": bool, "status": int, "data": ..., "error": str}``.
+    """
+    if _query is not None:
+        try:
+            result = _query(base_url, promql, start=start, end=end, step=step)
+            return {"ok": result.get("status", 0) in (0, 200),
+                    "status": result.get("status", 0),
+                    "data": result.get("data"),
+                    "error": result.get("error", "")}
+        except Exception as exc:
+            return {"ok": False, "status": 0, "data": None, "error": str(exc)}
+    import urllib.request, urllib.parse as _up
+    try:
+        url = f"{base_url.rstrip('/')}/api/v1/query_range"
+        qs = _up.urlencode({"query": promql, "start": start, "end": end, "step": step})
+        req = urllib.request.Request(f"{url}?{qs}",
+                                     headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            import json as _json
+            payload = _json.loads(resp.read().decode("utf-8", "replace"))
+        return {"ok": payload.get("status") == "success",
+                "status": 200 if payload.get("status") == "success" else 500,
+                "data": payload.get("data"),
+                "error": payload.get("status", "")}
+    except Exception as exc:
+        return {"ok": False, "status": 0, "data": None, "error": str(exc)}
+
+
+def _aggregate_range_values(qres: Dict[str, Any],
+                           agg: str = "avg") -> Optional[float]:
+    """Reduce a range-query result to a single scalar for SLO evaluation.
+
+    ``qres`` is the parsed Prometheus ``query_range`` response
+    (``{"ok": …, "data": {"result": [{"values": [[ts, value], …], …}]}``).
+    ``agg`` is one of ``"avg" | "max" | "min" | "sum" | "p95"``.
+    Returns the aggregated value, or None when there are no values.
+    """
+    import statistics
+    result = ((qres.get("data") or {}).get("result") or [])
+    # Collect all values across all series (flatten for a single-metric SLO).
+    all_values: List[float] = []
+    for series in result:
+        for _, val in (series.get("values") or []):
+            try:
+                all_values.append(float(val))
+            except (TypeError, ValueError):
+                continue
+    if not all_values:
+        return None
+    if agg == "max":
+        return max(all_values)
+    if agg == "min":
+        return min(all_values)
+    if agg == "sum":
+        return sum(all_values)
+    if agg == "p95":
+        srt = sorted(all_values)
+        if len(srt) == 1:
+            return srt[0]
+        # nearest-rank p95
+        import math
+        rank = max(1, math.ceil(0.95 * len(srt)))
+        return srt[rank - 1]
+    # default: avg
+    return statistics.fmean(all_values) if all_values else None
+
+
+def _query_prometheus_range(base_url: str, promql: str,
+                            start: str, end: str, step: str,
+                            _query=None) -> Dict[str, Any]:
+    """Run a Prometheus range query over [start, end] with the given step.
+
+    When ``_query`` is supplied it is used (test seam); otherwise the stdlib
+    ``urllib`` GETs ``{base_url}/api/v1/query_range`` with
+    ``start``, ``end``, ``step``.
+    Returns ``{"ok": bool, "status": int, "data": ..., "error": str}``.
+    """
+    if _query is not None:
+        try:
+            result = _query(base_url, promql, start=start, end=end, step=step)
+            return {"ok": result.get("status", 0) in (0, 200),
+                    "status": result.get("status", 0),
+                    "data": result.get("data"),
+                    "error": result.get("error", "")}
+        except Exception as exc:
+            return {"ok": False, "status": 0, "data": None, "error": str(exc)}
+    import urllib.request, urllib.parse as _up
+    try:
+        url = f"{base_url.rstrip('/')}/api/v1/query_range"
+        qs = _up.urlencode({"query": promql, "start": start, "end": end, "step": step})
+        req = urllib.request.Request(f"{url}?{qs}",
+                                     headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            import json as _json
+            payload = _json.loads(resp.read().decode("utf-8", "replace"))
+        return {"ok": payload.get("status") == "success",
+                "status": 200 if payload.get("status") == "success" else 500,
+                "data": payload.get("data"),
+                "error": payload.get("status", "")}
+    except Exception as exc:
+        return {"ok": False, "status": 0, "data": None, "error": str(exc)}
+
+
+def _aggregate_range_values(qres: Dict[str, Any],
+                           agg: str = "avg") -> Optional[float]:
+    """Reduce a range-query result to a single scalar for SLO evaluation.
+
+    ``qres`` is the parsed Prometheus ``query_range`` response
+    (``{"ok": …, "data": {"result": [{"values": [[ts, value], …], …}]}``).
+    ``agg`` is one of ``"avg" | "max" | "min" | "sum" | "p95"``.
+    Returns the aggregated value, or None when there are no values.
+    """
+    import statistics
+    result = ((qres.get("data") or {}).get("result") or [])
+    # Collect all values across all series (flatten for a single-metric SLO).
+    all_values: List[float] = []
+    for series in result:
+        for _, val in (series.get("values") or []):
+            try:
+                all_values.append(float(val))
+            except (TypeError, ValueError):
+                continue
+    if not all_values:
+        return None
+    if agg == "max":
+        return max(all_values)
+    if agg == "min":
+        return min(all_values)
+    if agg == "sum":
+        return sum(all_values)
+    if agg == "p95":
+        srt = sorted(all_values)
+        if len(srt) == 1:
+            return srt[0]
+        # nearest-rank p95
+        import math
+        rank = max(1, math.ceil(0.95 * len(srt)))
+        return srt[rank - 1]
+    # default: avg
+    return statistics.fmean(all_values) if all_values else None
+
+
 def run_watch_from_promql(base_url: str,
                          promql: str,
                          threshold_fn,
@@ -461,53 +612,71 @@ def run_watch_from_promql(base_url: str,
                          alertmanager_url: Optional[str] = None,
                          alertmanager_timeout_s: float = 5.0,
                          _sleep_s: float = 0.0,
-                         _query=None) -> Dict[str, Any]:
-    """Watch a live Prometheus metric against an SLO threshold.
+                         _query=None,
+                         range_mode: bool = False,
+                         range_window: str = "5m",
+                         range_step: str = "60s",
+                         range_agg: str = "avg",
+                         _query_range=None) -> Dict[str, Any]:
+    """Watch a live Prometheus metric against an SLO threshold (v3.8 instant,
+    v3.9 range-window aggregation).
 
-    Instead of running local demo chains (as ``run_watch`` does), this
-    polls a real Prometheus endpoint with ``promql`` and evaluates the
-    result against ``threshold_fn`` (a callable that receives the query
-    result dict and returns ``(met: bool, observed: Any, message: str)``).
-    When the SLO is not met an alert is delivered to OnCall and/or
-    Alertmanager (same delivery paths as ``run_watch``).
+    ``threshold_fn`` receives the parsed Prometheus response dict and returns
+    ``(met: bool, observed: Any, message: str)``.
 
-    Parameters
-    ----------
-    base_url : str
-        Prometheus base URL, e.g. ``http://localhost:9090``.
-    promql : str
-        The PromQL query to evaluate each iteration.
-    threshold_fn : callable
-        ``fn(query_result: dict) -> (met: bool, observed: Any, message: str)``.
-        ``query_result`` is the parsed Prometheus response dict
-        (``{"ok": …, "data": {"result": …}}``).
-    iterations : int
-        Number of consecutive polls.
+    When ``range_mode`` is True, each iteration issues a ``query_range`` over
+    ``range_window`` (e.g. "5m") with ``range_step`` (e.g. "60s"), then
+    reduces the returned values to a single scalar with ``range_agg``
+    ("avg" | "max" | "min" | "sum" | "p95") before handing a normalized
+    result to ``threshold_fn``.
     """
+    import re as _re
     iterations = max(1, int(iterations))
     history: List[Dict[str, Any]] = []
     alerts: List[Dict[str, Any]] = []
     worst_observed = None
 
     for i in range(1, iterations + 1):
-        qres = _query_prometheus(base_url, promql, _query=_query)
-        met, observed, message = threshold_fn(qres)
+        if range_mode:
+            import time as _time
+            now = int(_time.time())
+            _m = _re.match(r"^\s*(\d+)\s*([smhd])\s*$", range_window)
+            mult = {"s": 1, "m": 60, "h": 3600, "d": 86400}[_m.group(2)] if _m else 300
+            window_s = int(_m.group(1)) * mult if _m else 300
+            end = str(now)
+            start = str(now - window_s)
+            qres = _query_prometheus_range(base_url, promql, start, end,
+                                           range_step, _query=_query_range)
+            observed_agg = _aggregate_range_values(qres, agg=range_agg)
+            norm_qres = {
+                "ok": qres.get("ok"),
+                "status": qres.get("status"),
+                "error": qres.get("error", ""),
+                "data": {"result": [{"value": [0, observed_agg]}]},
+                "range": {"window": range_window, "agg": range_agg,
+                          "observed": observed_agg},
+            }
+            met, observed, message = threshold_fn(norm_qres)
+        else:
+            qres = _query_prometheus(base_url, promql, _query=_query)
+            met, observed, message = threshold_fn(qres)
         entry = {
             "iteration": i,
             "query_ok": qres.get("ok"),
             "observed": observed,
             "met": met,
             "message": message,
+            **({"range_agg": range_agg, "range_window": range_window} if range_mode else {}),
         }
         history.append(entry)
         if not met:
             alert = {
                 "iteration": i,
-                "severity": "warning" if met is False else "critical",
+                "severity": "critical" if observed is not None and not met else "warning",
                 "slo": "prometheus-query",
                 "observed": observed,
                 "message": f"PromQL SLO breach: {message}",
-                "failed_skills": [],  # online metric, not local skills
+                "failed_skills": [],
             }
             if oncall_target:
                 _deliver_oncall(alert, target=oncall_target,
@@ -522,8 +691,8 @@ def run_watch_from_promql(base_url: str,
             import time as _time
             _time.sleep(_sleep_s)
 
-    return {
-        "mode": "promql",
+    report: Dict[str, Any] = {
+        "mode": "promql-range" if range_mode else "promql",
         "base_url": base_url,
         "promql": promql,
         "iterations": iterations,
@@ -532,6 +701,11 @@ def run_watch_from_promql(base_url: str,
         "worst_observed": worst_observed,
         "slo_met": not alerts,
     }
+    if range_mode:
+        report["range_window"] = range_window
+        report["range_step"] = range_step
+        report["range_agg"] = range_agg
+    return report
 
 
 def run_watch(iterations: int = 3,
@@ -645,6 +819,16 @@ def main(argv: List[str]) -> int:
     parser.add_argument("--prometheus-threshold", type=float, default=None,
                         help="numeric SLO threshold for --promql mode (the observed value "
                              "must be <= this; a no-op when --promql is not set)")
+    parser.add_argument("--prometheus-range", action="store_true",
+                        help="use query_range + window aggregation (v3.9) instead of an "
+                             "instant query; requires --promql + --prometheus-base")
+    parser.add_argument("--prometheus-range-window", type=str, default="5m",
+                        help="look-back window for --prometheus-range (default 5m)")
+    parser.add_argument("--prometheus-range-step", type=str, default="60s",
+                        help="sampling step for --prometheus-range (default 60s)")
+    parser.add_argument("--prometheus-range-agg", type=str, default="avg",
+                        choices=["avg", "max", "min", "sum", "p95"],
+                        help="aggregation for --prometheus-range (default avg)")
     args = parser.parse_args(argv)
 
     if args.promql and not args.prometheus_base:
@@ -676,11 +860,16 @@ def main(argv: List[str]) -> int:
             oncall_target=args.oncall_target,
             oncall_integration=args.oncall_integration,
             alertmanager_url=args.alertmanager_url,
-            alertmanager_timeout_s=args.alertmanager_timeout)
+            alertmanager_timeout_s=args.alertmanager_timeout,
+            range_mode=args.prometheus_range,
+            range_window=args.prometheus_range_window,
+            range_step=args.prometheus_range_step,
+            range_agg=args.prometheus_range_agg)
         if args.json:
             print(_json.dumps(report, ensure_ascii=False, default=str, indent=2))
         else:
-            print(f"=== Charter PromQL watch: {report['promql']} @ {report['base_url']} ===")
+            mode_str = f" [range {report.get('range_window')} agg={report.get('range_agg')}] " if report.get("range_mode") else ""
+            print(f"=== Charter PromQL watch{mode_str}: {report['promql']} @ {report['base_url']} ===")
             print(f"  iterations: {report['iterations']}  slo_met: {report['slo_met']}")
             for h in report["history"]:
                 print(f"    iter {h['iteration']}: ok={h['query_ok']} observed={h['observed']} "
