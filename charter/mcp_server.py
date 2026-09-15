@@ -732,6 +732,53 @@ class HTTPMCPServer:
         self._client_queues: Dict[str, "queue.Queue"] = {}
         self._clients_lock = threading.Lock()
         self._next_client = 0
+        # Prometheus-style request counters (v3.5 /metrics endpoint).
+        self._metrics_lock = threading.Lock()
+        self._request_total: Dict[tuple, int] = {}
+        self._label_counters: Dict[str, int] = {}
+        self._request_started = __import__("time").time()
+
+    # -- metrics helpers ----------------------------------------------------
+    def _inc_request(self, method: str, endpoint: str, status_code: int) -> None:
+        status_class = f"{status_code // 100}xx"
+        key = (method, endpoint, status_class)
+        with self._metrics_lock:
+            self._request_total[key] = self._request_total.get(key, 0) + 1
+            self._label_counters[endpoint] = self._label_counters.get(endpoint, 0) + 1
+
+    def _metrics_payload(self) -> Dict[str, Any]:
+        with self._metrics_lock:
+            total = dict(self._request_total)
+            by_endpoint = dict(self._label_counters)
+        uptime = __import__("time").time() - self._request_started
+        lines = [
+            "# HELP charter_mcp_requests_total Total MCP HTTP requests, by method/endpoint/status.",
+            "# TYPE charter_mcp_requests_total counter",
+        ]
+        for (method, endpoint, status_class), count in sorted(total.items()):
+            lines.append(
+                f'charter_mcp_requests_total{{method="{method}",endpoint="{endpoint}",status="{status_class}"}} {count}')
+        lines += [
+            "# HELP charter_mcp_requests_by_endpoint_total Total MCP HTTP requests, by endpoint.",
+            "# TYPE charter_mcp_requests_by_endpoint_total counter",
+        ]
+        for endpoint, count in sorted(by_endpoint.items()):
+            lines.append(f'charter_mcp_requests_by_endpoint_total{{endpoint="{endpoint}"}} {count}')
+        lines += [
+            "# HELP charter_mcp_uptime_seconds Seconds since the MCP HTTP server started.",
+            "# TYPE charter_mcp_uptime_seconds gauge",
+            f"charter_mcp_uptime_seconds {uptime:.3f}",
+        ]
+        return {"text": "\n".join(lines) + "\n"}
+
+    def _handle_metrics(self) -> None:
+        payload = self._metrics_payload()
+        body = payload["text"].encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def _auth_ok(self, request_headers: Any) -> bool:
         """True when the request is allowed under the current auth policy.
@@ -784,26 +831,38 @@ class HTTPMCPServer:
                                       "hint": "send an X-API-Key header matching CHARTER_MCP_API_KEY"})
 
             def do_GET(self):
+                if self.path == "/metrics":
+                    outer._inc_request("GET", "/metrics", 200)
+                    outer._handle_metrics()
+                    return
                 if not outer._auth_ok(self.headers):
+                    outer._inc_request("GET", self.path, 401)
                     self._auth_deny()
                     return
                 if self.path == "/mcp/health":
+                    outer._inc_request("GET", "/mcp/health", 200)
                     self._send_json(200, {"ok": True, "server": MCP_SERVER_INFO,
                                           "auth_required": bool(outer.api_key)})
                 elif self.path == "/mcp/tools":
+                    outer._inc_request("GET", "/mcp/tools", 200)
                     self._send_json(200, {"tools": list_mcp_tools()})
                 elif self.path == "/mcp/sse":
+                    outer._inc_request("GET", "/mcp/sse", 200)
                     self._sse_stream()
                 else:
+                    outer._inc_request("GET", self.path, 404)
                     self._send_json(404, {"error": "not found"})
 
             def do_POST(self):
                 if not outer._auth_ok(self.headers):
+                    outer._inc_request("POST", self.path, 401)
                     self._auth_deny()
                     return
                 if self.path == "/mcp/message":
+                    outer._inc_request("POST", "/mcp/message", 202)
                     self._handle_message()
                 else:
+                    outer._inc_request("POST", self.path, 404)
                     self._send_json(404, {"error": "not found"})
 
             def _sse_stream(self):
