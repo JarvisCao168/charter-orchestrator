@@ -6,7 +6,7 @@
 >
 > 定义 Agent 怎么干活、干到什么标准、什么时候该停下来让人确认
 
-[![Version](https://img.shields.io/badge/version-3.7.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
+[![Version](https://img.shields.io/badge/version-3.8.0-blue.svg)](https://github.com/JarvisCao168/charter-orchestrator)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Skill Definition](https://img.shields.io/badge/Skill-v2.1.0-green.svg)](SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
@@ -145,6 +145,20 @@ python -m charter.mcp_server     # stdio JSON-RPC
   以 Alertmanager v4 JSON 格式 POST 到 webhook（`_post` seam 可注入测试桩 / 认证传输），
   网络失败降级 plan-only，CI 仍绿。CLI：`--alertmanager-url ... --alertmanager-timeout N`。
 - 372 测试（原 361 + 6 MCP 事件通知 + 5 Alertmanager + 1 版本净增），3.9 / 3.11 / 3.12 全绿。
+
+
+## 🔌 v3.8 — MCP 工具结果自动推送 + demo-skill watch --promql 模式
+
+- **MCP 工具结果订阅**：`tools/subscribe_result` / `tools/unsubscribe_result` /
+  `tools/list_result_subscriptions`（按 tool 名订阅结果变化）；`tools/call` 执行后
+  自动向订阅 client 推 `notifications/resources/updated`（resource
+  `charter://tools/<name>/result`，payload 含完整结果）。
+- **demo-skill watch `--promql` 模式**：`run_watch_from_promql(base_url, promql,
+  threshold_fn, iterations, ...)` 每轮向 Prometheus 发一条 PromQL 查询，
+  由 `threshold_fn` 评估；不达标时通过 OnCall + Alertmanager 双通道投递告警。
+  CLI：`python -m charter.demo_skill --promql 'error_rate:rate5m' \
+       --prometheus-base http://localhost:9090 --prometheus-threshold 0.01`。
+- 388 测试（原 372 + 4 工具结果推送 + 7 --promql + 1 版本净增），3.9 / 3.11 / 3.12 全绿。
 
 
 ## 目录 / Table of Contents
