@@ -23,7 +23,7 @@ from charter.demo_skill import (
 
 
 def test_version_is_v3_5():
-    assert __version__.startswith("3.7")
+    assert __version__.startswith("3.8")
 
 
 def test_list_demo_skills_well_formed():
@@ -334,3 +334,119 @@ def test_deliver_alertmanager_seam_exception_degrades():
     assert am["delivered"] is False
     assert am["via"] == "alertmanager-plan"
     assert "transport down" in am["error"]
+
+
+# ---------------------------------------------------------------------------
+# v3.8 — demo-skill watch --promql mode (live Prometheus metric SLO watch)
+# ---------------------------------------------------------------------------
+
+def _fake_prom_query_ok(value):
+    """Return a canned _query seam that always succeeds with the given value."""
+    def _q(base_url, promql):
+        return {"status": 200,
+                "data": {"status": "success",
+                         "result": [{"__name__": "metric",
+                                     "value": [0, str(value)]}]}}
+    return _q
+
+
+def _fake_prom_query_err():
+    """A _query seam that always fails (simulates Prometheus being down)."""
+    def _q(base_url, promql):
+        return {"status": 500, "data": None, "error": "query failed"}
+    return _q
+
+
+def test_query_prometheus_seam_ok():
+    """_query_prometheus returns the seam result when _query is supplied."""
+    from charter.demo_skill import _query_prometheus
+    out = _query_prometheus("http://prom", "up", _query=_fake_prom_query_ok(1.0))
+    assert out["ok"] is True
+    assert out["status"] == 200
+    assert out["data"]["result"][0]["value"][1] == "1.0"
+
+
+def test_query_prometheus_seam_error():
+    """_query_prometheus surfaces a seam error without raising."""
+    from charter.demo_skill import _query_prometheus
+    out = _query_prometheus("http://prom", "up", _query=_fake_prom_query_err())
+    assert out["ok"] is False
+    assert out["error"] == "query failed"
+
+
+def test_query_prometheus_seam_exception():
+    """A _query seam that raises degrades to a plan-only error receipt."""
+    from charter.demo_skill import _query_prometheus
+    def boom(base_url, promql):
+        raise RuntimeError("seam exploded")
+    out = _query_prometheus("http://prom", "up", _query=boom)
+    assert out["ok"] is False
+    assert "seam exploded" in out["error"]
+
+
+def test_run_watch_from_promql_met():
+    """When the observed value is within threshold, no alert fires."""
+    from charter.demo_skill import run_watch_from_promql
+    # observed=0.5 <= threshold=1.0 -> met
+    def th_fn(qres):
+        r = ((qres.get("data") or {}).get("result") or [{}])[0]
+        v = float(r.get("value", [0, 0])[1])
+        return v <= 1.0, v, f"observed={v}"
+    report = run_watch_from_promql(
+        base_url="http://prom:9090",
+        promql="error_rate:rate5m",
+        threshold_fn=th_fn,
+        iterations=3,
+        _query=_fake_prom_query_ok(0.5))
+    assert report["slo_met"] is True
+    assert report["alerts"] == []
+    assert report["mode"] == "promql"
+    assert len(report["history"]) == 3
+
+
+def test_run_watch_from_promql_breach():
+    """When the observed value exceeds threshold, an alert fires and is delivered."""
+    from charter.demo_skill import run_watch_from_promql
+    def th_fn(qres):
+        r = ((qres.get("data") or {}).get("result") or [{}])[0]
+        v = float(r.get("value", [0, 0])[1])
+        return v <= 1.0, v, f"observed={v} threshold=1.0"
+    report = run_watch_from_promql(
+        base_url="http://prom:9090",
+        promql="error_rate:rate5m",
+        threshold_fn=th_fn,
+        iterations=1,
+        alertmanager_url="http://am:9093/api/v2/alerts",
+        _query=_fake_prom_query_ok(2.0))
+    assert report["slo_met"] is False
+    assert len(report["alerts"]) == 1
+    a = report["alerts"][0]
+    assert a["slo"] == "prometheus-query"
+    assert a["observed"] == 2.0
+    assert "alertmanager" in a, "alert should carry the Alertmanager receipt"
+    assert a["alertmanager"]["url"] == "http://am:9093/api/v2/alerts"
+
+
+def test_run_watch_from_promql_query_fails():
+    """When the Prometheus query itself fails, an alert fires with the error."""
+    from charter.demo_skill import run_watch_from_promql
+    def th_fn(qres):
+        if not qres.get("ok"):
+            return False, None, qres.get("error", "unknown")
+        return True, None, "ok"
+    report = run_watch_from_promql(
+        base_url="http://prom:9090",
+        promql="up",
+        threshold_fn=th_fn,
+        iterations=1,
+        _query=_fake_prom_query_err())
+    assert report["slo_met"] is False
+    assert len(report["alerts"]) == 1
+    assert "query failed" in report["alerts"][0]["message"]
+
+
+def test_promql_requires_base_url_in_cli():
+    """--promql without --prometheus-base returns exit code 1."""
+    from charter.demo_skill import main
+    rc = main(["--promql", "up"])
+    assert rc == 1
