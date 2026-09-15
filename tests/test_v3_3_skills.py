@@ -17,7 +17,7 @@ from charter import __version__
 
 
 def test_version_is_v3_5():
-    assert __version__.startswith("3.5")
+    assert __version__.startswith("3.6")
 
 
 # ---------------------------------------------------------------------------
