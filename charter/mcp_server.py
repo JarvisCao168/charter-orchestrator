@@ -582,6 +582,10 @@ class CharterMCPServer:
         # set when constructed by HTTPMCPServer, so the metrics resource
         # can expose live request counters.
         self._http_owner: Optional[Any] = None
+        # v3.7: push-style change notifications (MCP notifications/resources/updated).
+        # An optional sink callable the HTTP owner sets: fn(event_dict) -> None,
+        # invoked for each client that is subscribed to a changed resource.
+        self._notify_sink: Optional[Any] = None
 
     def _build_resources(self) -> None:
         import json as _json
@@ -632,6 +636,39 @@ class CharterMCPServer:
             "# /metrics endpoint for Prometheus-format counters.\n"
         )
 
+    def notify_resource_changed(self, uri: str, client_key: str,
+                                payload: Optional[Dict[str, Any]] = None) -> bool:
+        """Push an MCP ``notifications/resources/updated`` event to one client.
+
+        Returns True when the client had an open subscription to ``uri`` (the
+        event was queued for delivery); False otherwise. When an HTTP owner
+        attached a ``_notify_sink``, that sink is invoked with a JSON-RPC
+        notification dict so the SSE transport can deliver it.
+        """
+        subscribed = False
+        with self._subs_lock:
+            subs = self._subscriptions.get(client_key, set())
+            subscribed = uri in subs
+            if not subscribed:
+                return False
+        event = {
+            "jsonrpc": "2.0",
+            "method": "notifications/resources/updated",
+            "params": {
+                "uri": uri,
+                "client": client_key,
+                "payload": payload or {},
+                "ts": __import__("time").time(),
+            },
+        }
+        sink = self._notify_sink
+        if sink is not None:
+            try:
+                sink(event)
+            except Exception:
+                pass
+        return True
+
     # -- JSON-RPC dispatch ------------------------------------------------
 
     def handle(self, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -645,7 +682,7 @@ class CharterMCPServer:
                 "protocolVersion": "2024-11-05",
                 "capabilities": {
                     "tools": {"listChanged": False},
-                    "resources": {"listChanged": False},
+                    "resources": {"subscribe": True, "listChanged": False},
                 },
                 "serverInfo": MCP_SERVER_INFO,
             })
@@ -802,6 +839,13 @@ class HTTPMCPServer:
         self._server = CharterMCPServer()
         self._server._http_owner = self  # v3.6: expose live metrics via the resource
         self._lock = threading.Lock()
+        # v3.7: map subscription client_key -> SSE client id (cid) so push
+        # notifications can be routed to the right per-client queue.
+        self._client_keys: Dict[str, str] = {}
+        self._client_keys_lock = threading.Lock()
+        # v3.7: register a notification sink on the inner MCP server so
+        # resources/changed events are pushed onto the subscriber's SSE queue.
+        self._server._notify_sink = self._push_notification
         # Per-client SSE queues keyed by a client id.
         self._client_queues: Dict[str, "queue.Queue"] = {}
         self._clients_lock = threading.Lock()
@@ -819,6 +863,12 @@ class HTTPMCPServer:
         with self._metrics_lock:
             self._request_total[key] = self._request_total.get(key, 0) + 1
             self._label_counters[endpoint] = self._label_counters.get(endpoint, 0) + 1
+        # v3.7: push a resources/changed notification to any client subscribed
+        # to charter://metrics, so dashboards update without polling.
+        try:
+            self._broadcast_metrics_change()
+        except Exception:
+            pass
 
     def _metrics_payload(self) -> Dict[str, Any]:
         with self._metrics_lock:
@@ -883,6 +933,56 @@ class HTTPMCPServer:
     def _drop_client(self, cid: str) -> None:
         with self._clients_lock:
             self._client_queues.pop(cid, None)
+        # v3.7: clean up the client-key mapping if this cid was its own key.
+        self._drop_client_key(cid)
+
+    def _register_client_key(self, cid: str, key: str) -> None:
+        """v3.7: link an SSE client id to its subscription key."""
+        with self._client_keys_lock:
+            self._client_keys[key] = cid
+
+    def _drop_client_key(self, key: str) -> None:
+        with self._client_keys_lock:
+            self._client_keys.pop(key, None)
+
+    def _push_notification(self, event: Dict[str, Any]) -> None:
+        """v3.7: deliver a resources/changed event to the subscriber's SSE queue.
+
+        The event carries the client key; route it to that client's per-client
+        queue (SSE `event: message`). Unknown clients are dropped silently.
+        """
+        client_key = event.get("params", {}).get("client", "")
+        cid: Optional[str] = None
+        with self._client_keys_lock:
+            cid = self._client_keys.get(client_key)
+        if cid is None:
+            return
+        q = self._client_queues.get(cid)
+        if q is None:
+            return
+        import json as _json
+        q.put(_json.dumps(event, ensure_ascii=False))
+
+    def _broadcast_metrics_change(self) -> int:
+        """v3.7: push a metrics change notification to every client subscribed
+        to ``charter://metrics``. Returns the number of clients notified.
+
+        Called from ``_inc_request`` so subscribed dashboards get a push
+        instead of polling every 5s.
+        """
+        inner = self._server
+        with inner._subs_lock:
+            subscribed_keys = [
+                key for key, subs in inner._subscriptions.items()
+                if "charter://metrics" in subs
+            ]
+        snap = self._metrics_payload()["text"]
+        notified = 0
+        for key in subscribed_keys:
+            if inner.notify_resource_changed("charter://metrics", key,
+                                              payload={"metrics": snap}):
+                notified += 1
+        return notified
 
     # -- HTTP handler --------------------------------------------------------
     def _make_handler(self):
@@ -944,6 +1044,10 @@ class HTTPMCPServer:
                 _q = _pq(urlparse(self.path).query)
                 stream_mode = (_q.get("stream") or ["mcp"])[0]  # "mcp" | "metrics"
                 cid = outer._new_client()
+                # v3.7: the SSE client may subscribe to resources using its
+                # cid as the __client key; register that mapping so push
+                # notifications (resources/changed) are routed here.
+                outer._register_client_key(cid, cid)
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 self.send_header("Cache-Control", "no-cache")
@@ -956,19 +1060,43 @@ class HTTPMCPServer:
                 q = outer._client_queues[cid]
                 try:
                     if stream_mode == "metrics":
-                        # Push a live Prometheus metrics snapshot every 5s.
-                        # SSE data fields cannot contain raw newlines, so each
-                        # line of the metrics text becomes its own "data:" line
-                        # inside a single event.
+                        # v3.7: event-driven. Emit an initial snapshot, then
+                        # block on the per-client queue for resources/changed
+                        # push events (or a keepalive timeout). Each push
+                        # carries the fresh metrics text in the event payload;
+                        # when one arrives, re-send it. This replaces the
+                        # previous 5s polling loop.
                         import time as _time
+                        # initial snapshot so a fresh subscriber has data
+                        snap = outer._metrics_payload()["text"]
+                        data_lines = "".join(
+                            f"data: {line}\n" for line in snap.splitlines())
+                        self.wfile.write(f"event: metrics\n{data_lines}\n".encode())
+                        self.wfile.flush()
                         while True:
-                            snap = outer._metrics_payload()["text"]
+                            try:
+                                item = q.get(timeout=30)
+                            except queue.Empty:
+                                # keepalive comment so proxies don't time out
+                                self.wfile.write(b": keepalive\n\n")
+                                self.wfile.flush()
+                                continue
+                            if item is None:
+                                break
+                            # item is a JSON-RPC notification (resources/changed)
+                            # carrying the fresh metrics snapshot.
+                            import json as _json
+                            try:
+                                evt = _json.loads(item)
+                                new_snap = (evt.get("params") or {}).get("payload", {}).get("metrics")
+                            except Exception:
+                                new_snap = None
+                            if new_snap is None:
+                                new_snap = outer._metrics_payload()["text"]
                             data_lines = "".join(
-                                f"data: {line}\n" for line in snap.splitlines())
-                            self.wfile.write(
-                                f"event: metrics\n{data_lines}\n".encode())
+                                f"data: {line}\n" for line in new_snap.splitlines())
+                            self.wfile.write(f"event: metrics\n{data_lines}\n".encode())
                             self.wfile.flush()
-                            _time.sleep(5)
                     else:
                         while True:
                             try:
