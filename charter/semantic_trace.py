@@ -51,13 +51,25 @@ def cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
     return dot / (na * nb)
 
 
-def make_embedder(provider: str = "auto", dim: int = 256) -> Callable[[str, int], List[float]]:
-    """Resolve an embedder: prefer a real LLM embedder when a key is present,
-    otherwise the offline hashing embedder (keeps CI green).
+def make_embedder(provider: str = "auto", dim: int = 256,
+                  prefer_offline: bool = True) -> Callable[[str, int], List[float]]:
+    """Resolve an embedder.
+
+    Offline-first (deterministic, keeps CI green): when ``prefer_offline`` is
+    True (the default) OR no API key is available, the offline hashing
+    embedder (``charter.vector_memory.hash_embed``) is returned. A real LLM
+    embedder (Agnes / OpenAI) is used only when explicitly requested via
+    ``provider="agnes"`` / ``"openai"`` (with ``prefer_offline=False``) AND the
+    corresponding API key is present.
 
     Returns a callable ``(text, dim) -> normalized vector``.
     """
-    if provider != "null":
+    import os as _os
+    explicit_llm = provider in ("agnes", "openai")
+    want_llm = explicit_llm and not prefer_offline
+    key_present = _os.environ.get("AGNES_API_KEY") if provider == "agnes" else \
+                  (_os.environ.get("OPENAI_API_KEY") if provider == "openai" else None)
+    if want_llm and key_present:
         try:
             from charter.llm_embed import pick_embedder
             try:
@@ -69,7 +81,7 @@ def make_embedder(provider: str = "auto", dim: int = 256) -> Callable[[str, int]
                 pass
         except Exception:
             pass
-    # offline fallback (provider == "null" or no key / no network)
+    # offline fallback: default, or LLM requested but no key / no network.
     from charter.vector_memory import hash_embed
     def _hash(text: str, d: int = dim) -> List[float]:
         return hash_embed(text, d)
