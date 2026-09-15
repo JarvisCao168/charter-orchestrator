@@ -591,6 +591,11 @@ class CharterMCPServer:
         # that tool triggers a resources/changed push to that client (the tool's
         # output is exposed as the virtual resource charter://tools/<name>/result).
         self._tool_subscriptions: Dict[str, set] = {}  # client_key -> set of tool names
+        # v3.9: last-known result for each tool, exposed via
+        # resources/read on charter://tools/<name>/result.
+        import threading as _th
+        self._tool_results: Dict[str, Dict[str, Any]] = {}  # tool_name -> last outcome
+        self._tool_results_lock = _th.Lock()
 
     def _build_resources(self) -> None:
         import json as _json
@@ -716,6 +721,13 @@ class CharterMCPServer:
             args = params.get("arguments", {})
             outcome = run_tool(tool_name, args)
             text = json.dumps(outcome, ensure_ascii=False, default=str)
+            # v3.9: remember the last result so resources/read can expose it.
+            with self._tool_results_lock:
+                self._tool_results[tool_name] = {
+                    "result": outcome,
+                    "ok": outcome.get("ok", False),
+                    "ts": __import__("time").time(),
+                }
             # v3.8: push the tool-result change to any client subscribed to this
             # tool's result resource (charter://tools/<name>/result).
             self._notify_tool_result_changed(tool_name, outcome)
@@ -738,6 +750,33 @@ class CharterMCPServer:
                         "uri": uri,
                         "mimeType": "text/plain; version=0.0.4",
                         "text": metrics_text,
+                    }]
+                })
+            if uri.startswith("charter://tools/") and uri.endswith("/result"):
+                # v3.9: expose the last-known tool result as a readable resource.
+                tool_name = uri[len("charter://tools/"):-len("/result")]
+                with self._tool_results_lock:
+                    last = self._tool_results.get(tool_name)
+                import json as _json
+                if last is None:
+                    text = _json.dumps({
+                        "tool": tool_name,
+                        "found": False,
+                        "note": "no tool result yet — call the tool first",
+                    }, ensure_ascii=False, default=str)
+                else:
+                    text = _json.dumps({
+                        "tool": tool_name,
+                        "found": True,
+                        "ok": last.get("ok", False),
+                        "ts": last.get("ts"),
+                        "result": last.get("result"),
+                    }, ensure_ascii=False, default=str)
+                return self._result(msg_id, {
+                    "contents": [{
+                        "uri": uri,
+                        "mimeType": "application/json",
+                        "text": text,
                     }]
                 })
             if not uri.startswith("charter://skills/"):
