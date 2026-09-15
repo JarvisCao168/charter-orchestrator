@@ -103,11 +103,26 @@ class NullEmbedder:
 
 
 def pick_embedder(provider: str = "auto", **kw) -> Any:
-    """Resolve an embedder by provider name; 'auto' prefers Agnes if key set."""
+    """Resolve an embedder by provider name; 'auto' prefers Agnes if key set.
+
+    For 'openai' and 'agnes', the corresponding *_API_KEY env var (or an
+    explicit api_key= kwarg) is required; otherwise ValueError is raised.
+    A stray GITHUB_TOKEN or other generic token does NOT satisfy the check.
+    """
     p = provider.lower()
     if p == "agnes" or (p == "auto" and os.environ.get("AGNES_API_KEY")):
         return AgnesEmbedder(**kw.get("agnes", {}))
     if p == "openai":
+        # Strict check: only OPENAI_API_KEY (or explicit api_key=) is accepted.
+        # GITHUB_TOKEN / AGNES_API_KEY / other env vars are deliberately ignored
+        # so that CI environments that always have GITHUB_TOKEN set still
+        # correctly raise when no real OPENAI_API_KEY is present.
+        api_key = kw.get("openai", {}).get("api_key") or os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "OPENAI_API_KEY required (env) or pass pick_embedder("
+                "'openai', openai={'api_key': '...'})"
+            )
         return OpenAIEmbedder(**kw.get("openai", {}))
     if p == "null":
         return NullEmbedder()
