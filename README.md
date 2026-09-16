@@ -215,6 +215,24 @@ python -m charter.mcp_server     # stdio JSON-RPC
 
 455 测试（原 402 + 53），3.9 / 3.11 / 3.12 全绿。
 
+## 🔄 v3.14 — 计划流水线 + 自愈闭环 + L3 一致性
+
+- **`plan_pipeline` MCP 工具**（24 -> 25）：一次调用完成 "Critic 审查计划
+  DAG（可选闭环修复）→ 对最终计划每步做模型路由" 的完整流水线；步骤深度
+  按 DAG 传递祖先计算，`depth_scale`/`default_risk`/`default_tokens` 塑形
+  TaskProfile。
+- **自愈智能体闭环（`executor="mcp"`）**：`repair_and_rerun(plan,
+  executor="mcp")` 默认把 agent 钩子绑定到 `run_tool` —— 修复后的每个
+  MCP 工具步真实重跑，再进入下一轮后审，形成 "批评 → 修复 → 重跑真实工具
+  → 重审" 的完整自愈链；`mcp_step_executor()` 顶层导出。
+- **L3 分布式一致性**：`SemanticCache(ttl_s=...)` 按 key 过期；远端写带
+  版本戳 `{"__v", "__ts", "value"}`，`get_version(request)` 返回最后写入
+  版本（乐观锁令牌）；`HTTPKeyValueBackend.put_if_version(key, value,
+  if_version)` 经 `X-If-Version` 头做乐观写（409 冲突 → False，离线安全）。
+- **`demo --gov --live`**：起真实 in-process HTTP KV 网关，演示跨进程 L3
+  命中（node1 写版本化值，node2 空内存经 L3 读回且版本可见）。
+- **测试**：502 全绿（3.9 / 3.11 / 3.12）。
+
 ## 🔄 v3.13 — 治理 MCP 工具 + Critic 重跑闭环 + 分布式语义缓存
 
 - **4 个治理 MCP 工具**（`validate_output` / `critic_plan` / `trace_span` /
