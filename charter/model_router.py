@@ -348,6 +348,78 @@ class SemanticCache:
             except Exception:  # noqa: BLENT
                 pass
 
+    def sweep_expired(self) -> Dict[str, Any]:
+        """v3.19: proactively purge all TTL-expired keys across L1/L2/L3.
+
+        Scans every tier for entries whose ``__ts`` (or ``ts``) is older than
+        ``self._ttl_s`` and removes them. Returns a dict:
+
+          {
+            "swept": int,                  # total keys removed
+            "l1_swept": [key, ...],
+            "l2_swept": [key, ...],
+            "l3_swept": [key, ...],        # tombstoned (no DELETE in KV)
+            "ttl_s": float | None,
+          }
+
+        Call this periodically from a background task to keep memory and
+        disk bounded when ``ttl_s`` is set.
+        """
+        if self._ttl_s is None:
+            return {"swept": 0, "l1_swept": [], "l2_swept": [],
+                    "l3_swept": [], "ttl_s": None}
+        now = time.time()
+        cutoff = now - self._ttl_s
+        l1_swept: List[str] = []
+        l2_swept: List[str] = []
+        l3_swept: List[str] = []
+
+        # L1: scan in-memory dict
+        with self._lock:
+            for key, entry in list(self._cache.items()):
+                ts = entry.get("ts", 0.0)
+                if ts < cutoff:
+                    self._cache.pop(key, None)
+                    self._remote_versions.pop(key, None)
+                    l1_swept.append(key)
+
+        # L2: scan SQLite
+        if self._db is not None:
+            rows = self._db.execute(
+                "SELECT cache_key, ts FROM semantic_cache WHERE ts < ?",
+                (cutoff,)).fetchall()
+            for key, _ts in rows:
+                self._db.execute("DELETE FROM semantic_cache WHERE cache_key=?", (key,))
+                l2_swept.append(key)
+            self._db.commit()
+
+        # L3: scan remote (best-effort; tombstone expired keys)
+        if self._remote is not None:
+            try:
+                all_keys = self._remote.list_keys()
+                for key in all_keys:
+                    try:
+                        env = self._remote.get(key)
+                    except Exception:  # noqa: BLENT
+                        continue
+                    if env is None:
+                        continue
+                    if isinstance(env, dict) and "__ts" in env:
+                        ts = float(env.get("__ts", 0.0))
+                        if ts < cutoff:
+                            try:
+                                self._remote.put(key, {"__v": 0, "__ts": now,
+                                                       "value": None, "__deleted": True})
+                                l3_swept.append(key)
+                            except Exception:  # noqa: BLENT
+                                pass
+            except Exception:  # noqa: BLENT
+                pass
+
+        total = len(l1_swept) + len(l2_swept) + len(l3_swept)
+        return {"swept": total, "l1_swept": l1_swept, "l2_swept": l2_swept,
+                "l3_swept": l3_swept, "ttl_s": self._ttl_s}
+
     # -- key --------------------------------------------------------
     def _k(self, request: str) -> str:
         key = self._key_fn(request)
