@@ -33,13 +33,17 @@ list-skill:
 #   make stress TIER=high            - high-pressure preset (16 writers x 100 rounds)
 #   make stress TIER=low             - low-pressure preset (2 writers x 10 rounds)
 stress:
+\t@if [ "$(TIER)" = "high" ]; then _N=16; _I=100; _R=50; _T=high; \
+\telif [ "$(TIER)" = "low" ]; then _N=2; _I=10; _R=30; _T=low; \
+\telif [ "$(TIER)" = "custom" ]; then _N=$(N); _I=$(I); _R=30; _T=custom; \
+\telse _N=$(N); _I=$(I); _R=30; _T=default; fi
 \t@if [ "$(JSON)" = "1" ]; then \
-\t\t$(PYTHON) -c "import sys, json; sys.path.insert(0, '.'); from charter import reference_kv_gateway, stress_multi_writer; srv, url, _ = reference_kv_gateway(); r = stress_multi_writer(n_writers=$(N), iterations=$(I), base_url=url, max_cas_retries=30); r['version']='3.18'; print(json.dumps(r, indent=2)); assert r['ok'], r; srv.shutdown()" ; \
+\t\t$(PYTHON) -c "import sys, json; sys.path.insert(0, '.'); from charter import reference_kv_gateway, stress_multi_writer; srv, url, _ = reference_kv_gateway(); r = stress_multi_writer(n_writers=$(_N), iterations=$(_I), base_url=url, max_cas_retries=$(_R)); r['version']='3.22'; r['tier']='$(_T)'; r['n_writers']=r['n_writers']; r['iterations']=r['iterations']; print(json.dumps(r, indent=2)); assert r['ok'], r; srv.shutdown()" ; \
 \telse \
-\t\t$(PYTHON) -c "import sys; sys.path.insert(0, '.'); from charter import reference_kv_gateway, stress_multi_writer; srv, url, _ = reference_kv_gateway(); r = stress_multi_writer(n_writers=$(N), iterations=$(I), base_url=url, max_cas_retries=30); print(r); assert r['ok'], r; srv.shutdown()" ; \
+\t\t$(PYTHON) -c "import sys; sys.path.insert(0, '.'); from charter import reference_kv_gateway, stress_multi_writer; srv, url, _ = reference_kv_gateway(); r = stress_multi_writer(n_writers=$(_N), iterations=$(_I), base_url=url, max_cas_retries=$(_R)); r['tier']='$(_T)'; print(r); assert r['ok'], r; srv.shutdown()" ; \
 \tfi
 \t@if [ -n "$(OUT)" ]; then \
-\t\t$(PYTHON) -c "import sys, json; sys.path.insert(0, '.'); from charter import reference_kv_gateway, stress_multi_writer; srv, url, _ = reference_kv_gateway(); r = stress_multi_writer(n_writers=$(N), iterations=$(I), base_url=url, max_cas_retries=30); r['version']='3.18'; json.dump(r, open('$(OUT)','w'), indent=2); assert r['ok'], r; srv.shutdown()" ; \
+\t\t$(PYTHON) -c "import sys, json; sys.path.insert(0, '.'); from charter import reference_kv_gateway, stress_multi_writer; srv, url, _ = reference_kv_gateway(); r = stress_multi_writer(n_writers=$(_N), iterations=$(_I), base_url=url, max_cas_retries=$(_R)); r['version']='3.22'; r['tier']='$(_T)'; json.dump(r, open('$(OUT)','w'), indent=2); assert r['ok'], r; srv.shutdown()" ; \
 \t\techo "CAS stress report written to $(OUT)" ; \
 \tfi
 
