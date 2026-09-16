@@ -364,25 +364,36 @@ class SemanticCache:
         import threading as _th
         stop_evt = _th.Event()
         state = {"last_sweep": None, "last_reconcile": None}
+        counters = {"sweeps": 0, "keys_swept": 0}
+        counters_lock = _th.Lock()
+        started_at = time.time()
 
         def _loop() -> None:
-            import time as _t
+            import time as _t2
             while not stop_evt.is_set():
                 rep = self.sweep_expired()
                 state["last_sweep"] = rep
+                with counters_lock:
+                    counters["sweeps"] += 1
+                    counters["keys_swept"] += int(rep.get("swept", 0))
                 if reconcile:
                     state["last_reconcile"] = self.reconcile(repair=True)
                 stop_evt.wait(interval_s)
 
         t = _th.Thread(target=_loop, daemon=True, name="charter-sweeper")
+        started_at = time.time()
         t.start()
 
         class _Handle:
             def __init__(self, thread: _th.Thread, stop_event: _th.Event,
-                         state_dict: dict) -> None:
+                         state_dict: dict, ctrs: dict, ctr_lock: _th.Lock,
+                         start_ts: float) -> None:
                 self._thread = thread
                 self._stop_event = stop_event
                 self._state = state_dict
+                self._counters = ctrs
+                self._ctr_lock = ctr_lock
+                self._start_ts = start_ts
 
             def stop(self) -> None:
                 self._stop_event.set()
@@ -400,7 +411,24 @@ class SemanticCache:
             def running(self) -> bool:
                 return self._thread.is_alive() and not self._stop_event.is_set()
 
-        return _Handle(t, stop_evt, state)
+            def stats(self) -> Dict[str, Any]:
+                """v3.21: cumulative sweeper statistics.
+
+                Returns a dict with ``sweeps_total``, ``keys_swept_total``,
+                ``uptime_s``, ``running``, ``last_sweep``, ``last_reconcile``.
+                """
+                import time as _t3
+                with self._ctr_lock:
+                    return {
+                        "sweeps_total": self._counters["sweeps"],
+                        "keys_swept_total": self._counters["keys_swept"],
+                        "uptime_s": round(_t3.time() - self._start_ts, 3),
+                        "running": self.running,
+                        "last_sweep": self._state.get("last_sweep"),
+                        "last_reconcile": self._state.get("last_reconcile"),
+                    }
+
+        return _Handle(t, stop_evt, state, counters, counters_lock, started_at)
 
     def sweep_expired(self) -> Dict[str, Any]:
         """v3.19: proactively purge all TTL-expired keys across L1/L2/L3.
