@@ -758,8 +758,11 @@ def run_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
             import hashlib as _hashlib
             import json as _json
             _cache_params = {k: args.get(k) for k in
-                             ("outputs", "closed_loop", "max_rounds",
+                             ("closed_loop", "max_rounds",
                               "depth_scale", "default_risk", "default_tokens")}
+            # v3.16: cache only the routing decision (plan + routing params),
+            # NOT the per-call audit outputs, so repeated calls with the same
+            # plan hit the cache deterministically across processes.
             _plan_hash_src = _json.dumps(
                 {"plan": plan_d, "params": _cache_params},
                 sort_keys=True, ensure_ascii=False, default=str)
@@ -876,7 +879,7 @@ def load_skill(skill_id: str) -> Dict[str, Any]:
 
 MCP_SERVER_INFO = {
     "name": "charter-orchestrator",
-    "version": "3.15.0",
+    "version": "3.16.0",
     "description": "Full-lifecycle governance & orchestration framework for AI agents. "
                    "Exposes 20 governance tools and 47 structured skills with "
                    "enforceable gates, TDD, guardrails, and human-confirmation points.",
@@ -1092,21 +1095,40 @@ class CharterMCPServer:
             # recorded, mirroring the "don't crash the chain" policy.
             gate_upstream = self._shared_upstream if hasattr(self, "_shared_upstream") else None
             gate_context = self._shared_context if hasattr(self, "_shared_context") else None
+            _gw_passed: Optional[bool] = None
             if self.gateway is not None:
                 gated = self.gateway.check_with_retry(lambda: outcome,
                                                       upstream=gate_upstream,
                                                       context=gate_context)
                 outcome = gated
+                _gw_res = outcome.get("_gw") if isinstance(outcome, dict) else None
+                if _gw_res is not None:
+                    _gw_passed = bool(_gw_res.get("passed"))
             text = json.dumps(outcome, ensure_ascii=False, default=str)
             # v3.11/v3.15: record a semantic span so input->output drift is
             # traceable (v3.15 fixes the pre-3.15 NameError: `text` must be
             # computed before the tracer records the span).
+            _gov_span = None
             if self.semantic_tracer is not None:
-                self.semantic_tracer.record(
+                _gov_span = self.semantic_tracer.record(
                     span_id=None,
                     input_text=json.dumps(args, ensure_ascii=False),
                     output_text=text,
                     tool=tool_name)
+            # v3.16: publish governance audit metrics to the HTTP owner
+            # (exposed on /metrics as charter_mcp_gate_* / charter_mcp_tracer_*).
+            _owner = self._http_owner
+            if _owner is not None and hasattr(_owner, "_gov_lock"):
+                with _owner._gov_lock:
+                    if _gw_passed is True:
+                        _owner._gov_gate_pass += 1
+                    elif _gw_passed is False:
+                        _owner._gov_gate_fail += 1
+                    if _gov_span is not None:
+                        _owner._gov_tracer_spans += 1
+                        if _gov_span.verdict == "hallucination":
+                            _owner._gov_tracer_hallucinations += 1
+                        _owner._gov_tracer_drift_sum += max(0.0, 1.0 - _gov_span.similarity)
             # v3.9: remember the last result so resources/read can expose it.
             with self._tool_results_lock:
                 self._tool_results[tool_name] = {
@@ -1335,6 +1357,15 @@ class HTTPMCPServer:
         self._request_total: Dict[tuple, int] = {}
         self._label_counters: Dict[str, int] = {}
         self._request_started = __import__("time").time()
+        # v3.16: governance audit metrics (populated when the inner server has
+        # gateway / semantic_tracer attached via attach_full_governance or by
+        # an operator). Counted on every tools/call when governance is on.
+        self._gov_lock = threading.Lock()
+        self._gov_gate_pass: int = 0
+        self._gov_gate_fail: int = 0
+        self._gov_tracer_spans: int = 0
+        self._gov_tracer_hallucinations: int = 0
+        self._gov_tracer_drift_sum: float = 0.0
 
     # -- metrics helpers ----------------------------------------------------
     def _inc_request(self, method: str, endpoint: str, status_code: int) -> None:
@@ -1372,6 +1403,24 @@ class HTTPMCPServer:
             "# HELP charter_mcp_uptime_seconds Seconds since the MCP HTTP server started.",
             "# TYPE charter_mcp_uptime_seconds gauge",
             f"charter_mcp_uptime_seconds {uptime:.3f}",
+        ]
+        # v3.16: governance audit metrics
+        lines += [
+            "# HELP charter_mcp_gate_pass_total Tool calls that passed the ValidationGateway.",
+            "# TYPE charter_mcp_gate_pass_total counter",
+            f"charter_mcp_gate_pass_total {self._gov_gate_pass}",
+            "# HELP charter_mcp_gate_fail_total Tool calls that failed (degraded) at the gateway.",
+            "# TYPE charter_mcp_gate_fail_total counter",
+            f"charter_mcp_gate_fail_total {self._gov_gate_fail}",
+            "# HELP charter_mcp_tracer_spans_total SemanticTracer spans recorded on tools/call.",
+            "# TYPE charter_mcp_tracer_spans_total counter",
+            f"charter_mcp_tracer_spans_total {self._gov_tracer_spans}",
+            "# HELP charter_mcp_tracer_hallucinations_total Spans judged as hallucination drift.",
+            "# TYPE charter_mcp_tracer_hallucinations_total counter",
+            f"charter_mcp_tracer_hallucinations_total {self._gov_tracer_hallucinations}",
+            "# HELP charter_mcp_tracer_drift_sum Total input->output drift (1 - similarity).",
+            "# TYPE charter_mcp_tracer_drift_sum gauge",
+            f"charter_mcp_tracer_drift_sum {self._gov_tracer_drift_sum:.6f}",
         ]
         return {"text": "\n".join(lines) + "\n"}
 
