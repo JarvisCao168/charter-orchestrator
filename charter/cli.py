@@ -204,7 +204,7 @@ def demo_governance() -> int:
     from charter.demo_skill import _demo_governance
 
     print("=" * 64)
-    print("Charter Orchestrator v3.14 - governance demo (--gov)")
+    print("Charter Orchestrator v3.15 - governance demo (--gov)")
     print("=" * 64)
 
     # Classic chain
@@ -244,73 +244,61 @@ def demo_governance() -> int:
 
 
 def _demo_governance_live() -> dict:
-    """v3.14: spin up a real in-process HTTP KV gateway and demonstrate a
-    cross-process L3 cache hit with version stamps + TTL.
+    """v3.15: REAL cross-process L3 demo.
 
-    A fresh SemanticCache instance (simulating a second node/process) reads
-    a value that only the remote backend holds - proving distributed
-    consistency, not just local persistence.
+    Spins up a reference HTTP KV gateway (thread-hosted, in-process), then
+    launches TWO separate Python subprocesses:
+      - writer:  node A writes a versioned value through its SemanticCache L3
+      - reader:  node B (fresh process, no shared memory) reads it back via L3
+    This proves distributed cache consistency across real process boundaries,
+    not just within one process.
     """
-    import json
-    import http.server
-    import threading
-    import urllib.parse
+    import os as _os
+    import subprocess
+    import sys as _sys
 
-    class _KV(http.server.BaseHTTPRequestHandler):
-        store = {}
-        versions = {}
+    from charter import reference_kv_gateway
+    srv, url, _store = reference_kv_gateway()
 
-        def log_message(self, *a):
-            pass
-
-        def do_GET(self):
-            k = urllib.parse.unquote(self.path.split("/kv/")[-1])
-            if k in _KV.store:
-                b = json.dumps(_KV.store[k]).encode()
-                self.send_response(200)
-                self.send_header("Content-Length", str(len(b)))
-                self.end_headers()
-                self.wfile.write(b)
-            else:
-                self.send_response(404)
-                self.end_headers()
-
-        def do_POST(self):
-            k = urllib.parse.unquote(self.path.split("/kv/")[-1])
-            n = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(n).decode())
-            _KV.store[k] = body
-            _KV.versions[k] = body.get("__v") if isinstance(body, dict) else None
-            self.send_response(200)
-            self.end_headers()
-
-    srv = http.server.HTTPServer(("127.0.0.1", 0), _KV)
-    t = threading.Thread(target=srv.serve_forever, daemon=True)
-    t.start()
-    url = f"http://127.0.0.1:{srv.server_address[1]}"
-
-    from charter import SemanticCache, make_remote_backend
-    remote = make_remote_backend("http", url, timeout_s=2.0)
-
-    # node 1: write a versioned value
-    node1 = SemanticCache(max_entries=8, remote=remote, ttl_s=60.0)
-    node1.put("market-size-2024", 500e9)
-    v1 = node1.get_version("market-size-2024")
-    node1.close()
-
-    # node 2: fresh process, no local memory - L3 hit with version.
-    # (node1.close() already closed the shared backend, so make a second one.)
-    node2 = SemanticCache(max_entries=8,
-                          remote=make_remote_backend("http", url, timeout_s=2.0),
-                          ttl_s=60.0)
-    val = node2.get("market-size-2024")
-    v2 = node2.get_version("market-size-2024")
-    hit_rate = node2.stats()["hit_rate"]
-    node2.close()
+    base_dir = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    writer_script = (
+        "import sys\n"
+        f"sys.path.insert(0, {base_dir!r})\n"
+        "from charter import SemanticCache, make_remote_backend\n"
+        f"remote = make_remote_backend('http', {url!r}, timeout_s=3.0)\n"
+        "c = SemanticCache(max_entries=8, remote=remote, ttl_s=300.0)\n"
+        "c.put('market-size-2024', 500e9)\n"
+        "print('writer version:', c.get_version('market-size-2024'))\n"
+        "c.close()\n"
+    )
+    reader_script = (
+        "import sys\n"
+        f"sys.path.insert(0, {base_dir!r})\n"
+        "from charter import SemanticCache, make_remote_backend\n"
+        f"remote = make_remote_backend('http', {url!r}, timeout_s=3.0)\n"
+        "c = SemanticCache(max_entries=8, remote=remote, ttl_s=300.0)\n"
+        "val = c.get('market-size-2024')\n"
+        "print('reader value:', val, 'version:', c.get_version('market-size-2024'),\n"
+        "      'hits:', c.hits, 'misses:', c.misses)\n"
+        "c.close()\n"
+    )
+    py = _sys.executable
+    wr = subprocess.run([py, "-c", writer_script],
+                        capture_output=True, text=True, timeout=60, cwd=base_dir)
+    rd = subprocess.run([py, "-c", reader_script],
+                        capture_output=True, text=True, timeout=60, cwd=base_dir)
     srv.shutdown()
+    return {
+        "gateway_url": url,
+        "writer_out": wr.stdout.strip(),
+        "reader_out": rd.stdout.strip(),
+        "writer_exit": wr.returncode,
+        "reader_exit": rd.returncode,
+        "writer_stderr": wr.stderr.strip()[-200:] if wr.returncode else "",
+        "reader_stderr": rd.stderr.strip()[-200:] if rd.returncode else "",
+        "cross_process_l3_hit": rd.returncode == 0 and "hits: 1" in rd.stdout,
+    }
 
-    return {"l3_value": val, "v1": v1, "v2": v2, "hit_rate": hit_rate,
-            "cross_process_l3_hit": val is not None and node2.hits >= 1}
 
 if __name__ == "__main__":
     raise SystemExit(main())
