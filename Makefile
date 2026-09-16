@@ -27,12 +27,24 @@ list-skill:
 	$(PYTHON) -m charter.demo_skill --list
 
 # v3.15: ETag CAS multi-writer stress (no lost updates under concurrency)
-#   make stress N=4 I=25   - 4 writers x 25 iterations by default
+#   make stress N=4 I=25             - 4 writers x 25 iterations by default
+#   make stress N=4 I=25 JSON=1     - machine-readable JSON (for CI artifacts)
+#   make stress N=4 I=25 OUT=cas_report.json  - also write JSON to a file
 stress:
-\t$(PYTHON) -c "import sys; sys.path.insert(0, '.'); from charter import reference_kv_gateway, stress_multi_writer; srv, url, _ = reference_kv_gateway(); r = stress_multi_writer(n_writers=$(N), iterations=$(I), base_url=url, max_cas_retries=30); print(r); assert r['ok'], r; srv.shutdown()"
+\t@if [ "$(JSON)" = "1" ]; then \
+\t\t$(PYTHON) -c "import sys, json; sys.path.insert(0, '.'); from charter import reference_kv_gateway, stress_multi_writer; srv, url, _ = reference_kv_gateway(); r = stress_multi_writer(n_writers=$(N), iterations=$(I), base_url=url, max_cas_retries=30); r['version']='3.18'; print(json.dumps(r, indent=2)); assert r['ok'], r; srv.shutdown()" ; \
+\telse \
+\t\t$(PYTHON) -c "import sys; sys.path.insert(0, '.'); from charter import reference_kv_gateway, stress_multi_writer; srv, url, _ = reference_kv_gateway(); r = stress_multi_writer(n_writers=$(N), iterations=$(I), base_url=url, max_cas_retries=30); print(r); assert r['ok'], r; srv.shutdown()" ; \
+\tfi
+\t@if [ -n "$(OUT)" ]; then \
+\t\t$(PYTHON) -c "import sys, json; sys.path.insert(0, '.'); from charter import reference_kv_gateway, stress_multi_writer; srv, url, _ = reference_kv_gateway(); r = stress_multi_writer(n_writers=$(N), iterations=$(I), base_url=url, max_cas_retries=30); r['version']='3.18'; json.dump(r, open('$(OUT)','w'), indent=2); assert r['ok'], r; srv.shutdown()" ; \
+\t\techo "CAS stress report written to $(OUT)" ; \
+\tfi
 
 N ?= 4
 I ?= 25
+JSON ?= 0
+OUT ?=
 
 # v3.17: big-pressure CAS preset (16 writers x 100 rounds, conflict-rate stats)
 stress-big:
