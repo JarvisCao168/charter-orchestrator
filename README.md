@@ -215,6 +215,20 @@ python -m charter.mcp_server     # stdio JSON-RPC
 
 455 测试（原 402 + 53），3.9 / 3.11 / 3.12 全绿。
 
+## 🔄 v3.22 — 自动注册 Sweeper + Webhook 持久化 + 自定义 Tier + 层级表格看板
+
+- **`start_sweeper(http_server=...)` 自动注册**：传入 `HTTPMCPServer`
+  实例即自动 `register_sweeper()`，`/metrics` 输出
+  `charter_sweeper_sweeps_total` / `keys_swept_total` /
+  `uptime_seconds` / `running`，免去手动接线。
+- **Webhook 重试 SQLite 持久化**：`_webhook_set_db_path(path)` 启用
+  崩溃安全落盘；`_webhook_restore_from_db()` 启动时恢复未发 webhook。
+- **`make stress TIER=custom N=8 I=50`**：自定义档位，JSON 输出带
+  `tier="custom"` + 实际 `n_writers`/`iterations` 参数。
+- **看板 tier 分组渲染**：`metrics-watch` 解析 SSE `tier_breakdown`
+  数据行，每 5 轮输出 per-tier gate_pass/fail 计数表格。
+- **测试**：559 全绿（3.9 / 3.11 / 3.12）。
+
 ## 🔄 v3.21 — Sweeper 统计 + Webhook 重试 + 压测 Tier + SSE 层级明细
 
 - **`SweeperHandle.stats()`**：`{sweeps_total, keys_swept_total,
