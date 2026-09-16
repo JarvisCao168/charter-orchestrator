@@ -192,6 +192,10 @@ def main(argv: list[str] | None = None) -> int:
         # v3.17: post a --trace-out audit report to a GitHub PR
         #   python -m charter.cli attach-audit --report gov_audit.json --pr 123 [--repo owner/name] [--gh base]
         return attach_audit_to_pr(argv[1:])
+    if argv[0] == "audit-loop":
+        # v3.18: periodic governance audit + auto-attach to PR
+        #   python -m charter.cli audit-loop --pr 42 [--repo o/n] [--interval 30] [--cycles 0]
+        return audit_loop(argv[1:])
     if argv[0] == "validate":
         import subprocess
         return subprocess.call([sys.executable,
@@ -212,7 +216,7 @@ def demo_governance() -> int:
     from charter.demo_skill import _demo_governance
 
     print("=" * 64)
-    print("Charter Orchestrator v3.17 - governance demo (--gov)")
+    print("Charter Orchestrator v3.18 - governance demo (--gov)")
     print("=" * 64)
 
     # Classic chain
@@ -358,26 +362,31 @@ def _parse_metrics(text: str) -> dict:
 def metrics_watch(argv: list) -> int:
     """v3.17: terminal dashboard that polls an MCP /metrics endpoint.
 
-    Renders the 5 governance audit counters (gate pass/fail, tracer spans /
-    hallucinations / drift) plus request counters, with deltas, in a
-    refreshable table. Ctrl-C to stop.
+    v3.18: dual-source — when ``--sse`` is given, the dashboard also
+    subscribes to the SSE ``/mcp/sse?stream=metrics`` event stream and
+    updates in real time without polling. Both sources are merged; SSE
+    events take priority (they carry the freshest snapshot). Ctrl-C to stop.
     """
     import time as _t
+    import threading as _th
     import urllib.request
 
     url = None
+    sse_url = None
     interval = 2.0
     i = 0
     while i < len(argv):
         a = argv[i]
         if a in ("--url", "-u") and i + 1 < len(argv):
             url = argv[i + 1]; i += 2
+        elif a in ("--sse",) and i + 1 < len(argv):
+            sse_url = argv[i + 1]; i += 2
         elif a == "--interval" and i + 1 < len(argv):
             interval = float(argv[i + 1]); i += 2
         else:
             i += 1
-    if not url:
-        print("usage: python -m charter.cli metrics-watch --url http://host:port/metrics [--interval 2.0]")
+    if not url and not sse_url:
+        print("usage: python -m charter.cli metrics-watch --url http://host:port/metrics [--sse http://host:port/mcp/sse?stream=metrics] [--interval 2.0]")
         return 2
     keys = [
         "charter_mcp_gate_pass_total",
@@ -387,33 +396,91 @@ def metrics_watch(argv: list) -> int:
         "charter_mcp_tracer_drift_sum",
     ]
     prev = {}
+    latest_snap: dict = {}
+
+    def _render(snap: dict, source: str) -> None:
+        gate_p = snap.get("charter_mcp_gate_pass_total", 0.0)
+        gate_f = snap.get("charter_mcp_gate_fail_total", 0.0)
+        spans = snap.get("charter_mcp_tracer_spans_total", 0.0)
+        hall = snap.get("charter_mcp_tracer_hallucinations_total", 0.0)
+        drift = snap.get("charter_mcp_tracer_drift_sum", 0.0)
+        delta = ""
+        if prev:
+            d = lambda k: snap.get(k, 0.0) - prev.get(k, 0.0)
+            delta = (f"  \u0394 gate+{d('charter_mcp_gate_pass_total'):g}/"
+                     f"-{d('charter_mcp_gate_fail_total'):g} "
+                     f"spans+{d('charter_mcp_tracer_spans_total'):g} "
+                     f"hall+{d('charter_mcp_tracer_hallucinations_total'):g}")
+        print(f"\r[gov:{source}] gate pass={gate_p:g} fail={gate_f:g} | "
+              f"spans={spans:g} halluc={hall:g} drift={drift:.3f}"
+              f"{delta}   ", end="", flush=True)
+
+    sse_stop = _th.Event()
+
+    def _sse_consumer() -> None:
+        """v3.18: SSE event stream consumer (thread)."""
+        import json as _json
+        try:
+            req = urllib.request.Request(sse_url, headers={"User-Agent": "charter-metrics-watch",
+                                                           "Accept": "text/event-stream"})
+            with urllib.request.urlopen(req, timeout=None) as r:
+                buf = ""
+                event_type = ""
+                data_lines: list = []
+                while not sse_stop.is_set():
+                    chunk = r.read(512).decode("utf-8", errors="replace")
+                    if not chunk:
+                        break
+                    buf += chunk
+                    while "\n" in buf:
+                        line, buf = buf.split("\n", 1)
+                        if line.startswith("event:"):
+                            event_type = line[6:].strip()
+                        elif line.startswith("data:"):
+                            data_lines.append(line[5:].lstrip())
+                        elif line == "":
+                            if event_type == "metrics" and data_lines:
+                                text = "\n".join(data_lines)
+                                snap = _parse_metrics(text)
+                                if snap:
+                                    _render(snap, "sse")
+                                data_lines = []
+                                event_type = ""
+                            else:
+                                data_lines = []
+                                event_type = ""
+        except Exception:
+            pass
+
+    sse_thread = None
+    if sse_url:
+        sse_thread = _th.Thread(target=_sse_consumer, daemon=True)
+        sse_thread.start()
+
     try:
         while True:
-            req = urllib.request.Request(url, headers={"User-Agent": "charter-metrics-watch"})
-            with urllib.request.urlopen(req, timeout=interval * 2 + 1) as r:
-                text = r.read().decode()
-            snap = _parse_metrics(text)
-            gate_p = snap.get("charter_mcp_gate_pass_total", 0.0)
-            gate_f = snap.get("charter_mcp_gate_fail_total", 0.0)
-            spans = snap.get("charter_mcp_tracer_spans_total", 0.0)
-            hall = snap.get("charter_mcp_tracer_hallucinations_total", 0.0)
-            drift = snap.get("charter_mcp_tracer_drift_sum", 0.0)
-            delta = ""
-            if prev:
-                d = lambda k: snap.get(k, 0.0) - prev.get(k, 0.0)
-                delta = (f"  \u0394 gate+{d('charter_mcp_gate_pass_total'):g}/"
-                         f"-{d('charter_mcp_gate_fail_total'):g} "
-                         f"spans+{d('charter_mcp_tracer_spans_total'):g} "
-                         f"hall+{d('charter_mcp_tracer_hallucinations_total'):g}")
-            print(f"\r[gov] gate pass={gate_p:g} fail={gate_f:g} | "
-                  f"spans={spans:g} halluc={hall:g} drift={drift:.3f}"
-                  f"{delta}   ", end="", flush=True)
-            prev = snap
-            _t.sleep(interval)
+            if url:
+                try:
+                    req = urllib.request.Request(url, headers={"User-Agent": "charter-metrics-watch"})
+                    with urllib.request.urlopen(req, timeout=interval * 2 + 1) as r:
+                        text = r.read().decode()
+                    snap = _parse_metrics(text)
+                    if snap:
+                        _render(snap, "poll")
+                        prev = snap
+                except Exception:
+                    pass
+            if not url:
+                # SSE-only mode: just sleep and let the thread render
+                _t.sleep(interval)
+            else:
+                _t.sleep(interval)
     except KeyboardInterrupt:
+        sse_stop.set()
         print("\nmetrics-watch stopped")
         return 0
     except Exception as e:
+        sse_stop.set()
         print(f"metrics-watch error: {e}")
         return 1
 
@@ -507,6 +574,79 @@ def _urllib_request(url, data=None, token=None, method="GET"):
     with urllib.request.urlopen(req, timeout=30) as r:
         raw = r.read().decode()
         return r.status, (_j.loads(raw) if raw else None)
+
+def audit_loop(argv: list) -> int:
+    """v3.18: periodic governance audit + auto-attach to a PR.
+
+    Repeatedly runs the ``demo --gov --trace-out`` pipeline (writing a fresh
+    JSON audit report each cycle) and posts it to a GitHub PR as a comment.
+    Use ``--interval`` for the cycle period and ``--cycles`` to bound the
+    run (0 = run until Ctrl-C).
+
+    Usage:
+      python -m charter.cli audit-loop --pr 42 --repo o/n --interval 30 --cycles 3
+    """
+    import time as _t
+    import os as _os
+    import subprocess as _sp
+    import sys as _sys
+
+    pr = None
+    repo = None
+    interval = 30.0
+    cycles = 0
+    out_dir = None
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--pr" and i + 1 < len(argv):
+            pr = argv[i + 1]; i += 2
+        elif a == "--repo" and i + 1 < len(argv):
+            repo = argv[i + 1]; i += 2
+        elif a == "--interval" and i + 1 < len(argv):
+            interval = float(argv[i + 1]); i += 2
+        elif a == "--cycles" and i + 1 < len(argv):
+            cycles = int(argv[i + 1]); i += 2
+        elif a == "--out-dir" and i + 1 < len(argv):
+            out_dir = argv[i + 1]; i += 2
+        else:
+            i += 1
+    if not pr:
+        print("usage: python -m charter.cli audit-loop --pr 42 [--repo o/n] [--interval 30] [--cycles 0] [--out-dir /tmp]")
+        return 2
+    if out_dir is None:
+        import tempfile
+        out_dir = tempfile.mkdtemp(prefix="charter-audit-")
+    _os.makedirs(out_dir, exist_ok=True)
+    print(f"audit-loop: PR #{pr} interval={interval}s cycles={cycles or chr(8734)} out_dir={out_dir}")
+    cycle = 0
+    try:
+        while True:
+            ts = _t.strftime("%Y%m%d-%H%M%S")
+            report = f"{out_dir}/gov_audit-{ts}.json"
+            r = _sp.run(
+                [_sys.executable, "-m", "charter.cli", "demo", "--gov",
+                 "--trace-out", report],
+                capture_output=True, text=True, timeout=120,
+                cwd=_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+            if r.returncode != 0:
+                print(f"[{cycle}] demo --gov failed (rc={r.returncode}): {r.stderr[:200]}")
+                if cycles and cycle + 1 >= cycles:
+                    break
+                _t.sleep(interval); cycle += 1
+                continue
+            rc = attach_audit_to_pr(["--report", report, "--pr", str(pr)] + (["--repo", repo] if repo else []))
+            status = "ok" if rc == 0 else f"rc={rc}"
+            print(f"[{cycle}] audit posted ({status}) report={_os.path.basename(report)}")
+            cycle += 1
+            if cycles and cycle >= cycles:
+                break
+            _t.sleep(interval)
+    except KeyboardInterrupt:
+        print(f"\naudit-loop stopped after {cycle} cycles")
+        return 0
+    print(f"audit-loop complete: {cycle} cycles")
+    return 0
 
 
 
