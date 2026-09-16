@@ -387,6 +387,27 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
             },
         },
     },
+    # -- v3.14 pipeline tool --
+    {
+        "name": "plan_pipeline",
+        "description": "Plan-to-routing pipeline: run the Critic on a task-plan DAG, "
+                       "then route every step of the (repaired) final plan to its "
+                       "optimal model tier. Returns the critic verdict + per-step "
+                       "routing decisions in one shot.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "plan": {"type": "object", "description": "Plan: {plan_id, goal, steps:[{id,name,depends_on,produces}]}"},
+                "outputs": {"type": "object", "description": "Per-step outputs for post-audit"},
+                "closed_loop": {"type": "boolean", "default": False, "description": "Repair-and-recheck before routing"},
+                "max_rounds": {"type": "integer", "default": 3},
+                "depth_scale": {"type": "integer", "default": 1, "description": "DAG depth multiplier for TaskProfile"},
+                "default_risk": {"type": "number", "default": 0.3},
+                "default_tokens": {"type": "integer", "default": 512},
+            },
+            "required": ["plan"],
+        },
+    },
 ]
 
 
@@ -630,6 +651,71 @@ def run_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
                 out["cached"] = True
             return {"ok": True, "result": out}
 
+        elif tool_name == "plan_pipeline":
+            import importlib as _il
+            _critic = _il.import_module("charter.critic_agent")
+            _mr = _il.import_module("charter.model_router")
+            plan_d = args.get("plan", {})
+            plan = _critic.CriticPlan(
+                plan_id=plan_d.get("plan_id", "pipeline"),
+                goal=plan_d.get("goal", ""),
+                steps=[_critic.CriticStep(
+                    id=s.get("id", f"step_{i}"),
+                    name=s.get("name", ""),
+                    depends_on=list(s.get("depends_on", [])),
+                    produces=list(s.get("produces", [])),
+                    required=s.get("required", True),
+                ) for i, s in enumerate(plan_d.get("steps", []))])
+            outputs = args.get("outputs")
+            critic = _critic.Critic()
+            if args.get("closed_loop"):
+                report = critic.reflect_until_sound(plan, outputs, max_rounds=int(args.get("max_rounds", 3)))
+                final_plan = _critic.CriticPlan(
+                    plan_id=report.final_plan.get("plan_id", plan.plan_id),
+                    goal=report.final_plan.get("goal", plan.goal),
+                    steps=[_critic.CriticStep(
+                        id=s["id"], name=s.get("name", ""),
+                        depends_on=list(s.get("depends_on", [])),
+                        produces=list(s.get("produces", [])),
+                        required=s.get("required", True))
+                       for s in report.final_plan.get("steps", [])])
+            else:
+                report = critic.reflect(plan, outputs)
+                final_plan = plan
+
+            # Route every step of the final plan through the ModelRouter.
+            # Depth = number of ancestors (transitive) of the step in the DAG.
+            router = _mr.ModelRouter()
+            step_map = {s.id: s for s in final_plan.steps}
+            def _ancestors(step_id, seen=None):
+                if seen is None:
+                    seen = set()
+                out = set()
+                for dep in step_map.get(step_id, _critic.CriticStep(step_id)).depends_on:
+                    out.add(dep)
+                    out |= _ancestors(dep, out)
+                return out
+            decisions = {}
+            for step in final_plan.steps:
+                anc = _ancestors(step.id)
+                profile = _mr.TaskProfile(
+                    depth=max(1, len(anc) + 1) * int(args.get("depth_scale", 1)),
+                    fan_in=max(1, len(anc)),
+                    risk=float(args.get("default_risk", 0.3)),
+                    tokens=int(args.get("default_tokens", 512)))
+                decisions[step.id] = router.route(profile)
+            return {"ok": True, "result": {
+                "critic": {
+                    "sound": report.sound,
+                    "converged": getattr(report, "converged", report.sound),
+                    "rounds": getattr(report, "rounds", 0),
+                    "pre_findings": len(report.pre_findings),
+                    "post_findings": len(report.post_findings),
+                },
+                "final_plan": final_plan.to_dict(),
+                "routing": decisions,
+            }}
+
         else:
             return {"ok": False, "error": f"unknown tool: {tool_name}"}
 
@@ -673,7 +759,7 @@ def load_skill(skill_id: str) -> Dict[str, Any]:
 
 MCP_SERVER_INFO = {
     "name": "charter-orchestrator",
-    "version": "3.13.0",
+    "version": "3.14.0",
     "description": "Full-lifecycle governance & orchestration framework for AI agents. "
                    "Exposes 20 governance tools and 47 structured skills with "
                    "enforceable gates, TDD, guardrails, and human-confirmation points.",
