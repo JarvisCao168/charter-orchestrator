@@ -215,6 +215,21 @@ python -m charter.mcp_server     # stdio JSON-RPC
 
 455 测试（原 402 + 53），3.9 / 3.11 / 3.12 全绿。
 
+## 🔄 v3.17 — 治理审计仪表盘 + PR 审计 + 参数化 CAS + 缓存对账
+
+- **治理审计仪表盘**：`python -m charter.cli metrics-watch --url
+  http://host:port/metrics` 终端看板，轮询 5 个治理指标（gate pass/fail、
+  tracer spans/hallucinations/drift）并显示每轮 Δ。
+- **审计报告进 PR**：`charter.cli attach-audit --report gov_audit.json --pr
+  123`：`--trace-out` 报告以 JSON 代码块附到 GitHub PR comment（优先
+  `gh` CLI，回退 REST + `CHARTER_GITHUB_TOKEN`）。
+- **CAS 压测参数化**：`stress_multi_writer` 输出 `ops` / `conflict_rate` /
+  `wall_s`；`make stress-big`（16 写者 × 100 轮，50 次 CAS 重试）大压力档。
+- **缓存对账**：`SemanticCache.reconcile()` 扫描 L1/L2/L3 键集差异
+  （`in_memory_only` / `in_storage_only` / `consistent`）；
+  `HTTPKeyValueBackend.list_keys()` + 参考网关 `/kv/_keys`。
+- **测试**：520 全绿（3.9 / 3.11 / 3.12）。
+
 ## 🔄 v3.16 — CAS 压测进 CI + 审计回放 + 共享 pipeline L3 + 治理审计指标
 
 - **多写者 CAS 压测进 CI**：`make stress`（默认 4 写者 × 25 轮，断言无丢失
