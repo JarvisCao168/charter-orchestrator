@@ -8,6 +8,7 @@ Covers:
 - main() --list and --json paths exit cleanly
 """
 import os
+import os as _os
 import json
 import sys
 
@@ -24,9 +25,15 @@ from charter.demo_skill import (
 
 
 def test_version_is_v3_5():
-    assert __version__.startswith("3.14")
-
-
+    # Read the project version from pyproject.toml without a TOML parser
+    # (tomllib is 3.11+; keep the assert 3.9-compatible via a text scan).
+    py = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "pyproject.toml")
+    import re as _re
+    with open(py, encoding="utf-8") as _f:
+        m = _re.search(r'(?m)^version\s*=\s*"(\d+\.\d+\.\d+)"', _f.read())
+    expected = m.group(1) if m else None
+    assert expected is not None, "could not read project version from pyproject.toml"
+    assert __version__ == expected, f"{__version__} != {expected}"
 def test_list_demo_skills_well_formed():
     entries = list_demo_skills()
     assert len(entries) >= 10
