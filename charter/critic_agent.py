@@ -29,7 +29,8 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 __all__ = ["CriticPlan", "CriticStep", "CriticFinding", "Critic", "CriticReport",
-           "apply_repairs", "reflect_until_sound", "repair_and_rerun"]
+           "apply_repairs", "reflect_until_sound", "repair_and_rerun",
+           "mcp_step_executor"]
 
 def apply_repairs(plan: CriticPlan, repairs: List[Dict[str, Any]]) -> CriticPlan:
     """Module-level convenience: apply ``repairs`` to ``plan`` via a default
@@ -402,6 +403,8 @@ def repair_and_rerun(plan: CriticPlan,
         Keep per-round entries in ``report.history`` (default True).
     """
     c = critic or Critic()
+    if executor == "mcp":  # v3.14: default agent = an MCP tool step
+        executor = _mcp_step_executor()
     if executor is None:
         return c.reflect_until_sound(plan, None, max_rounds=max_rounds)
 
@@ -438,3 +441,29 @@ def repair_and_rerun(plan: CriticPlan,
     report.converged = report.sound
     report.final_plan = current.to_dict()
     return report
+
+
+def _mcp_step_executor():
+    """v3.14: default agent hook - dispatch each step to an MCP tool.
+
+    Returns an ``executor(step) -> outputs`` where the step's ``name`` is the
+    MCP tool name and ``inputs`` are its arguments. This makes
+    ``repair_and_rerun(plan, executor="mcp")`` drive the full
+    "critic -> repair -> re-run the actual MCP tool -> re-audit" self-healing
+    loop.
+    """
+    from charter.mcp_server import run_tool
+
+    def executor(step):
+        tool = step.name or step.id
+        args = dict(getattr(step, "inputs", {}) or {})
+        res = run_tool(tool, args)
+        if res.get("ok"):
+            return res.get("result", {})
+        return {"_error": res.get("error"), "_tool": tool}
+    return executor
+
+
+def mcp_step_executor():
+    """Public alias of :func:`_mcp_step_executor` (the default ``executor="mcp"``)."""
+    return _mcp_step_executor()
