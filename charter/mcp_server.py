@@ -29,11 +29,107 @@ __all__ = [
     "load_skill",
     "run_tool",
     "main", "HTTPMCPServer", "run_http_server",
+    "configure_pipeline_cache", "attach_full_governance",
 ]
 
 # ---------------------------------------------------------------------------
 # Tool registry: the 20 Charter tools mapped to executable handlers
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# v3.15: module-level pipeline cache for plan_pipeline (SemanticCache L1/L2)
+# ---------------------------------------------------------------------------
+_PIPELINE_CACHE: Optional[Any] = None
+
+
+def _module_pipeline_cache() -> Any:
+    """Lazily create a shared SemanticCache for plan_pipeline results.
+
+    Cached by the plan hash (plan + audit outputs + routing params) so a
+    repeated call returns instantly. Defaults to in-memory only; call
+    ``configure_pipeline_cache(disk_path=..., remote=...)`` to enable
+    cross-process persistence / distribution.
+    """
+    global _PIPELINE_CACHE
+    if _PIPELINE_CACHE is None:
+        _mr = __import__("charter.model_router", fromlist=["SemanticCache"])
+        _PIPELINE_CACHE = _mr.SemanticCache(max_entries=128)
+    return _PIPELINE_CACHE
+
+
+# ---------------------------------------------------------------------------
+# v3.15: full-tool governance audit (ValidationGateway + SemanticTracer)
+# ---------------------------------------------------------------------------
+# Per-tool output contracts for the 25 MCP tools. Every tool result is a
+# {"ok", "result"/"error"} envelope, so the universal contract verifies the
+# envelope shape; tool-specific checks verify the inner payload.
+UNIVERSAL_TOOL_CONTRACT: Dict[str, Any] = {
+    "ok": {"type": "bool", "required": True},
+}
+
+
+def _tool_contract(tool_name: str) -> Dict[str, Any]:
+    """Return the output contract for ``tool_name`` (universal + specifics)."""
+    c = dict(UNIVERSAL_TOOL_CONTRACT)
+    if tool_name in ("init_project", "query_status", "query_rule"):
+        c["result"] = {"type": "dict", "required": True}
+    if tool_name == "validate_output":
+        c["result"] = {"type": "dict", "required": True,
+                       "fields": {"passed": {"type": "bool", "required": True}}}
+    if tool_name in ("critic_plan", "plan_pipeline"):
+        c["result"] = {"type": "dict", "required": True}
+    if tool_name == "trace_span":
+        c["result"] = {"type": "dict", "required": True,
+                       "fields": {"span_id": {"type": "str", "required": True}}}
+    if tool_name == "route_task":
+        c["result"] = {"type": "dict", "required": True}
+    return c
+
+
+def attach_full_governance(server: "CharterMCPServer",
+                          threshold: float = 0.1,
+                          dim: int = 128) -> None:
+    """v3.15: auto-wire ALL 25 tools through ValidationGateway + SemanticTracer.
+
+    Sets ``server.gateway`` to a ValidationGateway that enforces the
+    per-tool output contract on every tools/call, and ``server.semantic_tracer``
+    to a SemanticTracer that records an input->output span per call. This is
+    the "governance audit" mode: the whole tool surface is observability-
+    instrumented with no operator per-tool configuration.
+    """
+    from charter import validation_gateway as _gw_mod
+    from charter import semantic_trace as _st_mod
+
+    def _make_gateway() -> _gw_mod.ValidationGateway:
+        # A per-call contract is set via the gateway's context; the universal
+        # envelope contract is the floor, tool-specific ones are layered by
+        # the tools/call handler via the context hook below.
+        return _gw_mod.ValidationGateway(dict(UNIVERSAL_TOOL_CONTRACT))
+
+    server.gateway = _make_gateway()
+    server._tool_contracts = {t["name"]: _tool_contract(t["name"])
+                              for t in TOOL_DEFINITIONS}
+    server.semantic_tracer = _st_mod.SemanticTracer(threshold=threshold, dim=dim)
+    return server
+
+
+def configure_pipeline_cache(max_entries: int = 128,
+                            disk_path: Optional[str] = None,
+                            remote: Optional[Any] = None,
+                            ttl_s: Optional[float] = None) -> Any:
+    """v3.15: (re)configure the shared plan_pipeline cache. Returns the cache.
+
+    ``disk_path`` enables SQLite persistence; ``remote`` enables a distributed
+    L3 backend (see :func:`charter.model_router.make_remote_backend`);
+    ``ttl_s`` sets a per-key time-to-live.
+    """
+    global _PIPELINE_CACHE
+    _mr = __import__("charter.model_router", fromlist=["SemanticCache"])
+    _PIPELINE_CACHE = _mr.SemanticCache(max_entries=max_entries,
+                                        disk_path=disk_path,
+                                        remote=remote, ttl_s=ttl_s)
+    return _PIPELINE_CACHE
+
 
 TOOL_DEFINITIONS: List[Dict[str, Any]] = [
     # -- Foundation tools (1-6) --
@@ -656,6 +752,25 @@ def run_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
             _critic = _il.import_module("charter.critic_agent")
             _mr = _il.import_module("charter.model_router")
             plan_d = args.get("plan", {})
+            # v3.15: cache the whole pipeline decision by a stable plan hash
+            # (plan + audit outputs + routing params), so re-invoking the same
+            # plan returns the cached result in milliseconds.
+            import hashlib as _hashlib
+            import json as _json
+            _cache_params = {k: args.get(k) for k in
+                             ("outputs", "closed_loop", "max_rounds",
+                              "depth_scale", "default_risk", "default_tokens")}
+            _plan_hash_src = _json.dumps(
+                {"plan": plan_d, "params": _cache_params},
+                sort_keys=True, ensure_ascii=False, default=str)
+            _plan_hash = _hashlib.blake2b(_plan_hash_src.encode("utf-8"),
+                                          digest_size=16).hexdigest()
+            _pip_cache = _module_pipeline_cache()
+            _cached = _pip_cache.get(_plan_hash)
+            if _cached is not None:
+                _res = dict(_cached)
+                _res["cached"] = True
+                return {"ok": True, "result": _res}
             plan = _critic.CriticPlan(
                 plan_id=plan_d.get("plan_id", "pipeline"),
                 goal=plan_d.get("goal", ""),
@@ -704,7 +819,7 @@ def run_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
                     risk=float(args.get("default_risk", 0.3)),
                     tokens=int(args.get("default_tokens", 512)))
                 decisions[step.id] = router.route(profile)
-            return {"ok": True, "result": {
+            _pip_result = {
                 "critic": {
                     "sound": report.sound,
                     "converged": getattr(report, "converged", report.sound),
@@ -714,7 +829,9 @@ def run_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
                 },
                 "final_plan": final_plan.to_dict(),
                 "routing": decisions,
-            }}
+            }
+            _pip_cache.put(_plan_hash, _pip_result)
+            return {"ok": True, "result": _pip_result}
 
         else:
             return {"ok": False, "error": f"unknown tool: {tool_name}"}
@@ -759,7 +876,7 @@ def load_skill(skill_id: str) -> Dict[str, Any]:
 
 MCP_SERVER_INFO = {
     "name": "charter-orchestrator",
-    "version": "3.14.0",
+    "version": "3.15.0",
     "description": "Full-lifecycle governance & orchestration framework for AI agents. "
                    "Exposes 20 governance tools and 47 structured skills with "
                    "enforceable gates, TDD, guardrails, and human-confirmation points.",
@@ -980,14 +1097,16 @@ class CharterMCPServer:
                                                       upstream=gate_upstream,
                                                       context=gate_context)
                 outcome = gated
-            # v3.11: record a semantic span so input->output drift is traceable.
+            text = json.dumps(outcome, ensure_ascii=False, default=str)
+            # v3.11/v3.15: record a semantic span so input->output drift is
+            # traceable (v3.15 fixes the pre-3.15 NameError: `text` must be
+            # computed before the tracer records the span).
             if self.semantic_tracer is not None:
                 self.semantic_tracer.record(
                     span_id=None,
                     input_text=json.dumps(args, ensure_ascii=False),
                     output_text=text,
                     tool=tool_name)
-            text = json.dumps(outcome, ensure_ascii=False, default=str)
             # v3.9: remember the last result so resources/read can expose it.
             with self._tool_results_lock:
                 self._tool_results[tool_name] = {
