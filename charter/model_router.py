@@ -219,7 +219,7 @@ class SemanticCache:
         """True when an on-disk SQLite store is attached."""
         return self._db is not None
 
-    def reconcile(self) -> Dict[str, Any]:
+    def reconcile(self, repair: bool = False) -> Dict[str, Any]:
         """v3.17: consistency check across the three cache tiers.
 
         Scans L1 (memory), L2 (disk) and L3 (remote) and reports which keys
@@ -237,6 +237,15 @@ class SemanticCache:
         L2 and L3 listings are best-effort: a missing backend yields an
         empty list. ``consistent`` is True when the union of keys is the
         same across all available tiers.
+
+        v3.18: when ``repair=True``, drift is auto-fixed:
+          - ``in_storage_only`` keys (L2/L3 but not L1): back-fill L1 from
+            the freshest available tier (L3 first, then L2), and if the
+            value is TTL-expired, purge it from all tiers.
+          - ``in_memory_only`` keys (L1 but not L2/L3): persist them to
+            L2 and L3 so the next reconcile sees agreement.
+          The return dict gains ``repaired`` (list of fix actions) and
+          ``repairs`` (count).
         """
         with self._lock:
             l1 = list(self._cache.keys())
@@ -247,18 +256,97 @@ class SemanticCache:
         l3: List[str] = []
         if self._remote is not None and hasattr(self._remote, "list_keys"):
             l3 = list(self._remote.list_keys())
-        # If the remote doesn't expose list_keys, treat L3 as unknown and only
-        # report L1/L2 consistency.
         available = [set(l1)]
         if self._db is not None:
             available.append(set(l2))
         consistent = len(available) <= 1 or all(s == available[0] for s in available[1:])
-        return {
+        result: Dict[str, Any] = {
             "l1_keys": l1, "l2_keys": l2, "l3_keys": l3,
             "in_memory_only": sorted(set(l1) - set(l2) - set(l3)),
             "in_storage_only": sorted((set(l2) | set(l3)) - set(l1)),
             "consistent": consistent,
         }
+        if not repair:
+            return result
+        # ---- v3.18 auto-repair ----
+        repaired: List[Dict[str, Any]] = []
+        # 1) in_storage_only: back-fill L1 from L3 (freshest) then L2
+        for key in result["in_storage_only"]:
+            value: Any = None
+            source = ""
+            if self._remote is not None:
+                try:
+                    rv = self._remote.get(key)
+                    if rv is not None:
+                        if isinstance(rv, dict) and "__v" in rv and "value" in rv:
+                            ts = float(rv.get("__ts", 0.0))
+                            if self._ttl_s is not None and (time.time() - ts) > self._ttl_s:
+                                # TTL expired: purge from all tiers
+                                self._purge_key(key)
+                                repaired.append({"key": key, "action": "purge_expired", "source": source})
+                                value = None
+                            else:
+                                value = rv["value"]
+                        else:
+                            value = rv
+                        source = "l3"
+                except Exception:  # noqa: BLENT
+                    pass
+            if value is None and source != "l3":
+                if self._db is not None:
+                    dv = self._disk_get(key)
+                    if dv is not None:
+                        value = dv
+                        source = "l2"
+            if value is not None:
+                with self._lock:
+                    self._cache[key] = {"value": value, "ts": time.time()}
+                    self._cache.move_to_end(key)
+                    while len(self._cache) > self._max_entries:
+                        self._cache.popitem(last=False)
+                repaired.append({"key": key, "action": "backfill_l1", "source": source})
+            elif source == "l3":
+                # key was purged above
+                pass
+        # 2) in_memory_only: persist to L2 and L3
+        for key in result["in_memory_only"]:
+            with self._lock:
+                entry = self._cache.get(key)
+                val = entry["value"] if entry else None
+            if val is None:
+                continue
+            self._disk_set(key, val)
+            if self._remote is not None:
+                try:
+                    prev_v = self._remote_versions.get(key, {}).get("v") or 0
+                    envelope = {"__v": int(prev_v) + 1, "__ts": time.time(), "value": val}
+                    self._remote.put(key, envelope)
+                    with self._lock:
+                        self._remote_versions[key] = {"v": envelope["__v"], "ts": envelope["__ts"]}
+                except Exception:  # noqa: BLENT
+                    pass
+            repaired.append({"key": key, "action": "persist_l2_l3", "source": "l1"})
+        result["repaired"] = repaired
+        result["repairs"] = len(repaired)
+        result["consistent"] = not result["in_memory_only"] and not result["in_storage_only"]
+        return result
+
+    def _purge_key(self, key: str) -> None:
+        """v3.18: remove a key from all three cache tiers."""
+        with self._lock:
+            self._cache.pop(key, None)
+            self._remote_versions.pop(key, None)
+        if self._db is not None:
+            self._db.execute("DELETE FROM semantic_cache WHERE cache_key=?", (key,))
+            self._db.commit()
+        if self._remote is not None:
+            try:
+                # Best-effort: DELETE is not in the KV protocol; overwrite with
+                # a tombstone so a later reader sees __deleted=True.
+                self._remote.put(key, {"__v": 0, "__ts": time.time(), "value": None,
+                                       "__deleted": True})
+            except Exception:  # noqa: BLENT
+                pass
 
     # -- key --------------------------------------------------------
     def _k(self, request: str) -> str:
