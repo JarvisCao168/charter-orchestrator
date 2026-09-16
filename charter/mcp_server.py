@@ -879,7 +879,7 @@ def load_skill(skill_id: str) -> Dict[str, Any]:
 
 MCP_SERVER_INFO = {
     "name": "charter-orchestrator",
-    "version": "3.21.0",
+    "version": "3.22.0",
     "description": "Full-lifecycle governance & orchestration framework for AI agents. "
                    "Exposes 20 governance tools and 47 structured skills with "
                    "enforceable gates, TDD, guardrails, and human-confirmation points.",
