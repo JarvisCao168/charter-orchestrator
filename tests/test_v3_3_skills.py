@@ -8,6 +8,7 @@ Grouped by module. All calls are offline-safe (no network, no secrets):
 LLM-backed backends use the heuristic/offline path; judges run with no api_key.
 """
 import os
+import os as _os
 import sys
 import json
 
@@ -17,9 +18,15 @@ from charter import __version__
 
 
 def test_version_is_v3_5():
-    assert __version__.startswith("3.14")
-
-
+    # Read the project version from pyproject.toml without a TOML parser
+    # (tomllib is 3.11+; keep the assert 3.9-compatible via a text scan).
+    py = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "pyproject.toml")
+    import re as _re
+    with open(py, encoding="utf-8") as _f:
+        m = _re.search(r'(?m)^version\s*=\s*"(\d+\.\d+\.\d+)"', _f.read())
+    expected = m.group(1) if m else None
+    assert expected is not None, "could not read project version from pyproject.toml"
+    assert __version__ == expected, f"{__version__} != {expected}"
 # ---------------------------------------------------------------------------
 # checkpoint_iam / checkpoint_iam_remediate / checkpoint_rbac / checkpoint_shared
 # ---------------------------------------------------------------------------
