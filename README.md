@@ -215,6 +215,24 @@ python -m charter.mcp_server     # stdio JSON-RPC
 
 455 测试（原 402 + 53），3.9 / 3.11 / 3.12 全绿。
 
+## 🔄 v3.16 — CAS 压测进 CI + 审计回放 + 共享 pipeline L3 + 治理审计指标
+
+- **多写者 CAS 压测进 CI**：`make stress`（默认 4 写者 × 25 轮，断言无丢失
+  更新）；`make stress-ci` 打印可直接粘贴的**非阻塞** Actions step
+  （`continue-on-error: true`）；`test_cas_stress_no_lost_updates` 进 pytest。
+- **SemanticTrace 审计回放**：`tracer.to_json()` / `export(path)` +
+  `export_audit_report()`：自包含 JSON 审计时间线（summary + 每个 span 的
+  id/ts/tool/相似度/verdict/文本）；`charter.cli demo --gov --trace-out
+  file.json` 一键出报告。
+- **plan_pipeline 共享 L3（跨进程）**：`demo --gov --live-pipeline`：参考
+  KV 网关承载 pipeline 决策缓存 L3，两个独立 python 子进程跑同一计划，
+  node-b 命中 node-a 的写入（`cached: True`，两侧 routing 完整）；缓存 key
+  排除 per-call outputs，保证确定性命中。
+- **治理审计指标**：`attach_full_governance` 后每次 `tools/call` 发布
+  `charter_mcp_gate_pass_total` / `gate_fail_total` / `tracer_spans_total`
+  / `tracer_hallucinations_total` / `tracer_drift_sum`（`/metrics` Prometheus 文本）。
+- **测试**：514 全绿（3.9 / 3.11 / 3.12）。
+
 ## 🔄 v3.15 — ETag CAS + 计划流水线缓存 + 全工具治理审计 + 真跨进程 live
 
 - **ETag 式 CAS**：`put_if_version` 升级为 412 Precondition Failed 语义；
