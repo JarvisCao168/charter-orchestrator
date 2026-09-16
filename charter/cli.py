@@ -220,7 +220,7 @@ def demo_governance() -> int:
     from charter.demo_skill import _demo_governance
 
     print("=" * 64)
-    print("Charter Orchestrator v3.19 - governance demo (--gov)")
+    print("Charter Orchestrator v3.20 - governance demo (--gov)")
     print("=" * 64)
 
     # Classic chain
@@ -588,6 +588,24 @@ def _urllib_request(url, data=None, token=None, method="GET"):
         raw = r.read().decode()
         return r.status, (_j.loads(raw) if raw else None)
 
+def _webhook_post(payload: dict, url: str, timeout_s: int = 15) -> tuple:
+    """v3.20: POST a JSON payload to a Slack/Discord/Feishu webhook.
+
+    Returns ``(ok: bool, status_or_error: str)``. Stdlib-only.
+    """
+    import json as _json
+    import urllib.request
+    body = _json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method="POST",
+                                 headers={"Content-Type": "application/json",
+                                          "User-Agent": "charter-orchestrator"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_s) as r:
+            return True, str(r.status)
+    except Exception as e:
+        return False, str(e)[:200]
+
+
 def audit_loop(argv: list) -> int:
     """v3.18: periodic governance audit + auto-attach to a PR.
 
@@ -614,6 +632,8 @@ def audit_loop(argv: list) -> int:
     out_dir = None
     metrics_url = None
     dry_run = False
+    webhook_url = None
+    webhook_template = None
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -631,6 +651,10 @@ def audit_loop(argv: list) -> int:
             metrics_url = argv[i + 1]; i += 2
         elif a == "--dry-run":
             dry_run = True; i += 1
+        elif a == "--webhook-url" and i + 1 < len(argv):
+            webhook_url = argv[i + 1]; i += 2
+        elif a == "--webhook-template" and i + 1 < len(argv):
+            webhook_template = argv[i + 1]; i += 2
         else:
             i += 1
     if not pr:
@@ -685,9 +709,26 @@ def audit_loop(argv: list) -> int:
             if dry_run:
                 print(f"[{cycle}] dry-run: report written ({_os.path.basename(report)}), PR attach skipped")
             else:
-                rc = attach_audit_to_pr(["--report", report, "--pr", str(pr)] + (["--repo", repo] if repo else []))
+                rc = attach_audit_to_pr(["--report", report, "----pr", str(pr)] + (["--repo", repo] if repo else []))
                 status = "ok" if rc == 0 else f"rc={rc}"
                 print(f"[{cycle}] audit posted ({status}) report={_os.path.basename(report)}")
+            # v3.20: optional webhook delivery (Slack/Discord/Feishu)
+            if webhook_url:
+                import json as _json2
+                with open(report, encoding="utf-8") as _rf:
+                    report_doc = _json2.load(_rf)
+                _summary = report_doc.get("summary", {})
+                if webhook_template:
+                    payload = _json2.loads(webhook_template)
+                    payload.setdefault("text", f"charter audit cycle {cycle}")
+                    payload["spans"] = _summary.get("spans")
+                    payload["hallucinations"] = _summary.get("hallucinations")
+                else:
+                    payload = {"text": (f"Charter audit #{cycle}: spans={_summary.get('spans')} "
+                                       f"halluc={_summary.get('hallucinations')} "
+                                       f"avg_sim={_summary.get('avg_similarity')}")}
+                wok, wmsg = _webhook_post(payload, webhook_url)
+                print(f"[{cycle}] webhook: {wmsg}")
             cycle += 1
             if cycles and cycle >= cycles:
                 break
@@ -702,12 +743,11 @@ def audit_loop(argv: list) -> int:
 def validate_stress_report(argv: list) -> int:
     """v3.19: validate a CAS stress JSON report for schema completeness.
 
-    Checks that all required fields are present and that numeric fields
-    have the expected types. Exits 0 on success, 1 on validation failure,
-    2 on usage error.
+    v3.20: ``--ci`` flag outputs machine-readable JSON
+    ``{"valid": bool, "errors": [...], "file": str}`` for GitHub Actions.
 
     Usage:
-      python -m charter.cli validate-stress-report cas_report.json
+      python -m charter.cli validate-stress-report cas_report.json [--ci]
     """
     import json as _json
 
@@ -723,24 +763,38 @@ def validate_stress_report(argv: list) -> int:
         "iterations": int,
     }
 
-    if len(argv) != 1:
-        print("usage: python -m charter.cli validate-stress-report <file.json>")
+    ci_mode = "--ci" in argv
+    pos_args = [a for a in argv if a != "--ci"]
+
+    if len(pos_args) != 1:
+        print("usage: python -m charter.cli validate-stress-report <file.json> [--ci]")
+        if ci_mode:
+            print(_json.dumps({"valid": False, "errors": ["usage error"], "file": None}))
         return 2
 
+    rpath = pos_args[0]
     import os as _os
-    path = argv[0]
-    if not _os.path.isfile(path):
-        print(f"file not found: {path}")
+    if not _os.path.isfile(rpath):
+        err = f"file not found: {rpath}"
+        print(err)
+        if ci_mode:
+            print(_json.dumps({"valid": False, "errors": [err], "file": rpath}))
         return 1
 
     try:
-        doc = _json.load(open(path, encoding="utf-8"))
+        doc = _json.load(open(rpath, encoding="utf-8"))
     except Exception as e:
-        print(f"invalid JSON: {e}")
+        err = f"invalid JSON: {e}"
+        print(err)
+        if ci_mode:
+            print(_json.dumps({"valid": False, "errors": [err], "file": rpath}))
         return 1
 
     if not isinstance(doc, dict):
-        print("report must be a JSON object")
+        err = "report must be a JSON object"
+        print(err)
+        if ci_mode:
+            print(_json.dumps({"valid": False, "errors": [err], "file": rpath}))
         return 1
 
     errors = []
@@ -749,7 +803,6 @@ def validate_stress_report(argv: list) -> int:
             errors.append(f"missing field: {field}")
         else:
             val = doc[field]
-            # bool is a subclass of int in Python; exclude bool where int expected
             if expected_type is int and isinstance(val, bool):
                 errors.append(f"field {field} must be int, got bool")
             elif expected_type is bool and not isinstance(val, bool):
@@ -757,16 +810,20 @@ def validate_stress_report(argv: list) -> int:
             elif expected_type is (float, int) and not isinstance(val, (int, float)):
                 errors.append(f"field {field} must be numeric, got {type(val).__name__}")
 
+    if ci_mode:
+        result = {"valid": len(errors) == 0, "errors": errors, "file": rpath,
+                  "fields_checked": len(REQUIRED_FIELDS)}
+        print(_json.dumps(result, indent=2))
+        return 0 if not errors else 1
+
     if errors:
         print(f"validation FAILED ({len(errors)} error(s)):")
         for e in errors:
             print(f"  - {e}")
         return 1
 
-    print(f"validation OK: {len(REQUIRED_FIELDS)} required fields present in {path}")
+    print(f"validation OK: {len(REQUIRED_FIELDS)} required fields present in {rpath}")
     return 0
-
-
 
 def _demo_governance_live() -> dict:
     """v3.15: REAL cross-process L3 demo.
