@@ -11,7 +11,7 @@
 PYTHON ?= python
 SKILL  ?= obs_09
 
-.PHONY: test demo demo-skill list-skill stress stress-ci clean
+.PHONY: test demo demo-skill list-skill stress stress-big stress-ci clean
 
 test:
 	$(PYTHON) -m pytest tests/ -q
@@ -33,6 +33,10 @@ stress:
 
 N ?= 4
 I ?= 25
+
+# v3.17: big-pressure CAS preset (16 writers x 100 rounds, conflict-rate stats)
+stress-big:
+\t$(PYTHON) -c "import sys; sys.path.insert(0, '.'); from charter import reference_kv_gateway, stress_multi_writer; srv, url, _ = reference_kv_gateway(); r = stress_multi_writer(n_writers=16, iterations=100, base_url=url, max_cas_retries=50); print(r); assert r['ok'], r; srv.shutdown()"
 
 # v3.16: CI-ready non-blocking stress step (prints the snippet to paste into .github/workflows/ci.yml)
 stress-ci:
