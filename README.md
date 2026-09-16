@@ -215,6 +215,21 @@ python -m charter.mcp_server     # stdio JSON-RPC
 
 455 测试（原 402 + 53），3.9 / 3.11 / 3.12 全绿。
 
+## 🔄 v3.20 — 后台 GC 线程 + Webhook 审计 + CI 压测校验 + 双标签指标
+
+- **`start_sweeper()` 后台 GC**：`cache.start_sweeper(interval_s=30,
+  reconcile=True)` 启动守护线程，周期执行 `sweep_expired()` + 可选
+  `reconcile(repair=True)`；返回 handle（`stop()` / `last_sweep` /
+  `last_reconcile` / `running`）。
+- **`audit-loop --report-to-webhook`**：`--webhook-url` + `--webhook-template`
+  支持 Slack/Discord/飞书 JSON 推送（纯 stdlib），失败不中断循环。
+- **`validate-stress-report --ci`**：输出 `{"valid", "errors", "file",
+  "fields_checked"}` 机器可读 JSON，供 GitHub Actions 解析。
+- **`/metrics` tool+tier 双标签**：`charter_mcp_gate_pass_total{tool="...",
+  tier="high"}`，从 `route_task`/`plan_pipeline` 结果提取路由层级，支持
+  Prometheus 多维聚合查询。
+- **测试**：546 全绿（3.9 / 3.11 / 3.12）。
+
 ## 🔄 v3.19 — TTL 清扫 + 审计健康检查 + 压测校验 + 按工具治理指标
 
 - **`sweep_expired()` TTL 清扫**：`SemanticCache.sweep_expired()` 定期
