@@ -204,7 +204,7 @@ def demo_governance() -> int:
     from charter.demo_skill import _demo_governance
 
     print("=" * 64)
-    print("Charter Orchestrator v3.15 - governance demo (--gov)")
+    print("Charter Orchestrator v3.16 - governance demo (--gov)")
     print("=" * 64)
 
     # Classic chain
@@ -237,11 +237,90 @@ def demo_governance() -> int:
     if "--live" in sys.argv:
         rep_live = _demo_governance_live()
         print("[live L3] ", rep_live)
+    if "--live-pipeline" in sys.argv:
+        rep_pipe = _demo_pipeline_l3_live()
+        print("[live pipeline L3] ", rep_pipe)
+    # v3.16: --trace-out file.json : write a machine-readable semantic audit report
+    trace_out = None
+    for idx, a in enumerate(sys.argv):
+        if a == "--trace-out" and idx + 1 < len(sys.argv):
+            trace_out = sys.argv[idx + 1]
+    if trace_out:
+        from charter import SemanticTracer, export_audit_report
+        tracer = SemanticTracer(threshold=0.2)
+        # record the same good/bad spans the classic demo records
+        tracer.record("audit-good", "query the 2024 market size",
+                      "the 2024 market size is 500 billion", tool="demo")
+        tracer.record("audit-bad", "query the 2024 market size",
+                      "the weather is nice today", tool="demo")
+        path = export_audit_report(tracer, trace_out)
+        print(f"[audit] wrote {path} ({tracer.summary()['spans']} spans, "
+              f"{tracer.summary()['hallucinations']} hallucinations)")
+    suffixes = []
+    if "--live" in sys.argv:
+        suffixes.append("live L3")
+    if "--live-pipeline" in sys.argv:
+        suffixes.append("live pipeline L3")
+    if trace_out:
+        suffixes.append("audit report")
     print("\nOK: governance demo complete (4 modules + 2 closed-loop modes"
-          + (" + live L3)" if "--live" in sys.argv else ")"))
+          + (f" + {', '.join(suffixes)}" if suffixes else ")"))
     return 0
 
 
+
+def _demo_pipeline_l3_live() -> dict:
+    """v3.16: plan_pipeline decision cache shared across two processes via L3.
+
+    A reference KV gateway hosts the pipeline SemanticCache L3; two separate
+    python subprocesses call the same plan_pipeline plan - the second process
+    must serve its answer from the L3 (cached: True), proving the decision
+    cache is genuinely distributed, not local.
+    """
+    import os as _os
+    import subprocess
+    import sys as _sys
+
+    from charter import reference_kv_gateway
+    srv, url, _store = reference_kv_gateway()
+
+    base_dir = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    plan_obj = {"plan_id": "l3-pipe", "goal": "g",
+                "steps": [{"id": "a"}, {"id": "b", "depends_on": ["a"]},
+                           {"id": "c", "depends_on": ["b"]}],
+                "closed_loop": True}
+
+    import pickle as _pk
+    plan_lit = _pk.dumps(plan_obj)
+
+    def node_script(label):
+        return (
+            "import sys, pickle\n"
+            f"sys.path.insert(0, {base_dir!r})\n"
+            "from charter import configure_pipeline_cache, make_remote_backend\n"
+            f"configure_pipeline_cache(remote=make_remote_backend('http', {url!r}, timeout_s=3.0))\n"
+            "from charter.mcp_server import run_tool\n"
+            f"plan = pickle.loads({plan_lit!r})\n"
+            "r = run_tool('plan_pipeline', {'plan': plan})\n"
+            f"print({label!r}, 'cached:', r['result'].get('cached', False), "
+            "'routing:', len(r['result']['routing']))\n"
+        )
+
+    py = _sys.executable
+    n1 = subprocess.run([py, "-c", node_script("node-a")],
+                        capture_output=True, text=True, timeout=90, cwd=base_dir)
+    n2 = subprocess.run([py, "-c", node_script("node-b")],
+                        capture_output=True, text=True, timeout=90, cwd=base_dir)
+    srv.shutdown()
+    return {
+        "gateway_url": url,
+        "node_a": n1.stdout.strip(), "node_a_exit": n1.returncode,
+        "node_b": n2.stdout.strip(), "node_b_exit": n2.returncode,
+        "node_a_stderr": n1.stderr.strip()[-200:] if n1.returncode else "",
+        "node_b_stderr": n2.stderr.strip()[-200:] if n2.returncode else "",
+        "shared_l3_hit": n2.returncode == 0 and "cached: True" in n2.stdout
+                         and "cached: False" in n1.stdout,
+    }
 
 def _demo_governance_live() -> dict:
     """v3.15: REAL cross-process L3 demo.
