@@ -215,6 +215,25 @@ python -m charter.mcp_server     # stdio JSON-RPC
 
 455 测试（原 402 + 53），3.9 / 3.11 / 3.12 全绿。
 
+## 🔄 v3.15 — ETag CAS + 计划流水线缓存 + 全工具治理审计 + 真跨进程 live
+
+- **ETag 式 CAS**：`put_if_version` 升级为 412 Precondition Failed 语义；
+  `HTTPKeyValueBackend.cas(key, read, write_fn)` 观测-写入 CAS 循环 +
+  `observe()` 单 GET 原子快照（消除值/版本两次读之间的竞态窗口）；
+  `reference_kv_gateway()` 参考网关 + `stress_multi_writer()` 多写者压测
+  （验证无丢失更新）。
+- **plan_pipeline 决策缓存**：按 plan BLAKE2b 哈希缓存完整结果（critic 结论
+  + 逐步路由），同计划秒级复用；`configure_pipeline_cache(disk_path,
+  remote, ttl_s)` 可接 L2/L3。
+- **全工具治理审计**：`attach_full_governance(server)` 把 25 个 MCP 工具
+  全部自动经 ValidationGateway + SemanticTracer；修复 `tools/call` 追踪器
+  引用未赋值 `text` 的潜伏 NameError。
+- **`demo --gov --live` 真跨进程**：起真实 KV 网关 + 两个独立 python
+  子进程（写/读），reader 进程经 L3 命中（hits: 1）。
+- **版本断言防复发**：`test_version_is_v3_5` 改为动态读 `pyproject.toml`
+  版本（正则扫描，3.9 兼容），今后升版本不会再打破 CI。
+- **测试**：509 全绿（3.9 / 3.11 / 3.12）。
+
 ## 🔄 v3.14 — 计划流水线 + 自愈闭环 + L3 一致性
 
 - **`plan_pipeline` MCP 工具**（24 -> 25）：一次调用完成 "Critic 审查计划
