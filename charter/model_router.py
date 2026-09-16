@@ -148,7 +148,8 @@ class SemanticCache:
                  semantic_key: Optional[Any] = None,
                  max_entries: int = 256,
                  disk_path: Optional[str] = None,
-                 remote: Optional["SemanticCacheBackend"] = None) -> None:
+                 remote: Optional["SemanticCacheBackend"] = None,
+                 ttl_s: Optional[float] = None) -> None:
         self._cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
         self._max_entries = max(1, int(max_entries))
         self._lock = __import__("threading").Lock()
@@ -160,6 +161,9 @@ class SemanticCache:
         self._disk_path = disk_path
         # v3.13: optional remote/distributed L3 backend (offline-safe)
         self._remote = remote
+        # v3.14: distributed consistency: per-key TTL + version tracking
+        self._ttl_s = ttl_s
+        self._remote_versions: Dict[str, Dict[str, Any]] = {}
         if disk_path:
             import sqlite3
             import os as _os
@@ -248,13 +252,26 @@ class SemanticCache:
             except Exception:  # noqa: BLENT
                 remote_val = None
             if remote_val is not None:
+                # v3.14: unwrap the version envelope ({"__v", "__ts", "value"});
+                # apply per-key TTL; record the version for optimistic locking.
+                payload = remote_val
+                if isinstance(remote_val, dict) and "__v" in remote_val and "value" in remote_val:
+                    ts = float(remote_val.get("__ts", time.time()))
+                    if self._ttl_s is not None and (time.time() - ts) > self._ttl_s:
+                        # expired -> treat as a miss
+                        with self._lock:
+                            self.misses += 1
+                        return None
+                    payload = remote_val["value"]
+                    with self._lock:
+                        self._remote_versions[k] = {"v": remote_val.get("__v"), "ts": ts}
                 with self._lock:
-                    self._cache[k] = {"value": remote_val, "ts": time.time()}
+                    self._cache[k] = {"value": payload, "ts": time.time()}
                     self._cache.move_to_end(k)
                     self.hits += 1
                     while len(self._cache) > self._max_entries:
                         self._cache.popitem(last=False)
-                return remote_val
+                return payload
         with self._lock:
             self.misses += 1
         return None
@@ -270,8 +287,14 @@ class SemanticCache:
         self._disk_set(k, value)
         # v3.13: mirror to the remote (distributed) backend; offline-safe.
         if self._remote is not None:
+            # v3.14: version-stamp the payload so multi-node writers can do
+            # optimistic reads (get_version) + TTL enforcement.
+            prev_v = self._remote_versions.get(k, {}).get("v") or 0
+            envelope = {"__v": int(prev_v) + 1, "__ts": time.time(), "value": value}
             try:
-                self._remote.put(k, value)
+                self._remote.put(k, envelope)
+                with self._lock:
+                    self._remote_versions[k] = {"v": envelope["__v"], "ts": envelope["__ts"]}
             except Exception:  # noqa: BLENT
                 pass
 
@@ -290,7 +313,33 @@ class SemanticCache:
                 "disk_enabled": self.is_persistent(),
                 "disk_path": self._disk_path,
                 "remote_enabled": self._remote is not None,
-                "remote": self._remote.name() if self._remote else None}
+                "remote": self._remote.name() if self._remote else None,
+                "ttl_s": self._ttl_s,
+                "remote_versions": dict(self._remote_versions)}
+
+    def get_version(self, request: str) -> Optional[int]:
+        """v3.14: last-written version for ``request`` (optimistic-lock token).
+
+        Reads the locally tracked version, or queries the remote backend when
+        we have not written this key ourselves yet. Returns ``None`` on a miss
+        / offline (callers should treat that as "no known version" and use a
+        fresh write).
+        """
+        k = self._k(request)
+        with self._lock:
+            rec = self._remote_versions.get(k)
+            if rec is not None:
+                return rec.get("v")
+        if self._remote is not None:
+            try:
+                raw = self._remote.get(k)
+            except Exception:  # noqa: BLENT
+                raw = None
+            if isinstance(raw, dict) and "__v" in raw:
+                with self._lock:
+                    self._remote_versions[k] = {"v": raw.get("__v"), "ts": raw.get("__ts")}
+                return raw.get("__v")
+        return None
 
     def clear(self) -> None:
         with self._lock:
@@ -383,6 +432,35 @@ class HTTPKeyValueBackend(SemanticCacheBackend):
                 r.read()
         except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError):
             pass  # offline-safe: local layers already hold the value
+
+    def put_if_version(self, key: str, value: Any, if_version: Optional[int] = None) -> bool:
+        """v3.14: optimistic-locked write. Only writes when the server-side
+        version equals ``if_version`` (or the key is absent when
+        ``if_version is None``). Returns True on success, False on conflict.
+
+        Implemented via the ``X-If-Version`` header; a conforming gateway
+        returns 409 on a mismatch. Offline-safe: network errors return False.
+        """
+        if self._closed:
+            return False
+        import json as _json
+        import urllib.request
+        import urllib.error
+        h = self._headers()
+        if if_version is not None:
+            h["X-If-Version"] = str(if_version)
+        try:
+            req = urllib.request.Request(
+                f"{self._base}/kv/{urllib.parse.quote(str(key))}",
+                data=_json.dumps(value).encode("utf-8"),
+                headers=h, method="POST")
+            with urllib.request.urlopen(req, timeout=self._timeout) as r:
+                r.read()
+            return True
+        except urllib.error.HTTPError as e:
+            return e.code != 409  # conflict -> False; other errors -> offline miss
+        except (urllib.error.URLError, TimeoutError, OSError):
+            return False
 
     def close(self) -> None:
         self._closed = True
