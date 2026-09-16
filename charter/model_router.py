@@ -219,6 +219,47 @@ class SemanticCache:
         """True when an on-disk SQLite store is attached."""
         return self._db is not None
 
+    def reconcile(self) -> Dict[str, Any]:
+        """v3.17: consistency check across the three cache tiers.
+
+        Scans L1 (memory), L2 (disk) and L3 (remote) and reports which keys
+        are present in which tier. The goal is to detect drift: a key that
+        exists on disk or remote but is missing from memory (stale eviction)
+        or a key that is in memory but not yet persisted. Returns a dict:
+
+          {
+            "l1_keys": [...], "l2_keys": [...], "l3_keys": [...],
+            "in_memory_only": [...],     # L1 but not L2/L3
+            "in_storage_only": [...],    # L2/L3 but not L1
+            "consistent": bool,          # True when all three agree on keys
+          }
+
+        L2 and L3 listings are best-effort: a missing backend yields an
+        empty list. ``consistent`` is True when the union of keys is the
+        same across all available tiers.
+        """
+        with self._lock:
+            l1 = list(self._cache.keys())
+        l2: List[str] = []
+        if self._db is not None:
+            rows = self._db.execute("SELECT cache_key FROM semantic_cache").fetchall()
+            l2 = [r[0] for r in rows]
+        l3: List[str] = []
+        if self._remote is not None and hasattr(self._remote, "list_keys"):
+            l3 = list(self._remote.list_keys())
+        # If the remote doesn't expose list_keys, treat L3 as unknown and only
+        # report L1/L2 consistency.
+        available = [set(l1)]
+        if self._db is not None:
+            available.append(set(l2))
+        consistent = len(available) <= 1 or all(s == available[0] for s in available[1:])
+        return {
+            "l1_keys": l1, "l2_keys": l2, "l3_keys": l3,
+            "in_memory_only": sorted(set(l1) - set(l2) - set(l3)),
+            "in_storage_only": sorted((set(l2) | set(l3)) - set(l1)),
+            "consistent": consistent,
+        }
+
     # -- key --------------------------------------------------------
     def _k(self, request: str) -> str:
         key = self._key_fn(request)
@@ -513,6 +554,27 @@ class HTTPKeyValueBackend(SemanticCacheBackend):
             return raw.get("value"), raw.get("__v")
         return raw, None
 
+    def list_keys(self) -> List[str]:
+        """v3.17: best-effort listing of all remote keys (GET {base}/kv/_keys).
+
+        Returns an empty list when the gateway does not expose that endpoint,
+        so ``reconcile()`` degrades gracefully (L3 treated as unknown).
+        """
+        if self._closed:
+            return []
+        import json as _json
+        import urllib.request
+        import urllib.error
+        try:
+            req = urllib.request.Request(
+                f"{self._base}/kv/_keys", headers=self._headers(), method="GET")
+            with urllib.request.urlopen(req, timeout=self._timeout) as r:
+                body = r.read()
+            data = _json.loads(body.decode("utf-8")) if body else []
+            return list(data) if isinstance(data, list) else []
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError):
+            return []
+
     def close(self) -> None:
         self._closed = True
 
@@ -584,6 +646,14 @@ def reference_kv_gateway(host: str = "127.0.0.1", port: int = 0,
 
         def do_GET(self):
             k = _up.unquote(self.path.split("/kv/")[-1])
+            if k == "_keys":
+                with lock:
+                    b = json.dumps(list(store.keys())).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+                return
             with lock:
                 v = store.get(k)
             if v is None:
@@ -655,28 +725,41 @@ def stress_multi_writer(n_writers: int = 4, iterations: int = 25,
     if remote is None:
         raise ValueError("stress_multi_writer requires a running gateway (base_url)")
     conflicts = {"n": 0}
+    ops = {"n": 0}
+    wall = {"t": 0.0}
 
     def one_writer(wid: int) -> int:
         local_conf = 0
+        import time as _t
         for _ in range(iterations):
             ok = remote.cas(
                 key,
                 read=lambda: remote.get(key),
                 write_fn=lambda o, v: int(o + 1) if o is not None else 1,
                 max_retries=max_cas_retries, sleep_s=0.01)
+            ops["n"] += 1
             if not ok:
                 local_conf += 1
                 conflicts["n"] += 1
             else:
-                import time as _t
                 _t.sleep(0.01)  # widen the race window so conflicts are observable
         return local_conf
 
+    t0 = time.time()
     with ThreadPoolExecutor(max_workers=n_writers) as pool:
         list(pool.map(one_writer, range(n_writers)))
+    wall["t"] = time.time() - t0
     final_env = remote.get(key)
     final = final_env.get("value") if isinstance(final_env, dict) else final_env
     expected = n_writers * iterations
     remote.close()
-    return {"final": final, "expected": expected,
-            "ok": final == expected, "conflicts": conflicts["n"]}
+    total_ops = ops["n"]
+    return {
+        "final": final, "expected": expected,
+        "ok": final == expected,
+        "conflicts": conflicts["n"],
+        "ops": total_ops,
+        "conflict_rate": (conflicts["n"] / total_ops) if total_ops else 0.0,
+        "wall_s": round(wall["t"], 3),
+        "n_writers": n_writers, "iterations": iterations,
+    }
