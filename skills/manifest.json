@@ -16,6 +16,7 @@
     "list_skills",
     "manage_task_lifecycle",
     "manage_worktree",
+    "plan_pipeline",
     "query_rule",
     "query_status",
     "query_trace",
