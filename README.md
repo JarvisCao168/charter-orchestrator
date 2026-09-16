@@ -215,6 +215,19 @@ python -m charter.mcp_server     # stdio JSON-RPC
 
 455 测试（原 402 + 53），3.9 / 3.11 / 3.12 全绿。
 
+## 🔄 v3.18 — 缓存自动对账修复 + 双源看板 + 周期审计 + 压测 JSON
+
+- **`reconcile(repair=True)` 自动修复**：`in_storage_only` 键从 L3/L2 回填
+  L1，TTL 过期键全层清除（`_purge_key`）；`in_memory_only` 键持久化到
+  L2+L3。返回 `repaired` 明细 + `repairs` 计数。
+- **`metrics-watch` 双源**：`--sse` 参数启用 SSE 事件流线程，实时推送
+  `charter://metrics` 更新；主循环轮询 `/metrics` 作为后备。
+- **`audit-loop` 周期审计**：`charter.cli audit-loop --pr 42 [--interval 30]
+  [--cycles 0]`，每周期跑 `demo --gov --trace-out` 并自动附到 PR。
+- **`make stress JSON=1` / `OUT=file.json`**：压测结果输出为机器可读 JSON，
+  供 CI artifact 归档。
+- **测试**：526 全绿（3.9 / 3.11 / 3.12）。
+
 ## 🔄 v3.17 — 治理审计仪表盘 + PR 审计 + 参数化 CAS + 缓存对账
 
 - **治理审计仪表盘**：`python -m charter.cli metrics-watch --url
