@@ -879,7 +879,7 @@ def load_skill(skill_id: str) -> Dict[str, Any]:
 
 MCP_SERVER_INFO = {
     "name": "charter-orchestrator",
-    "version": "3.19.0",
+    "version": "3.20.0",
     "description": "Full-lifecycle governance & orchestration framework for AI agents. "
                    "Exposes 20 governance tools and 47 structured skills with "
                    "enforceable gates, TDD, guardrails, and human-confirmation points.",
@@ -1119,16 +1119,45 @@ class CharterMCPServer:
             # (exposed on /metrics as charter_mcp_gate_* / charter_mcp_tracer_*).
             _owner = self._http_owner
             if _owner is not None and hasattr(_owner, "_gov_lock"):
+                # v3.20: extract routing tier for dual-label counters
+                _tier = "unrouted"
+                if isinstance(outcome, dict):
+                    if "routing" in outcome and isinstance(outcome["routing"], dict) and outcome["routing"]:
+                        _first_r = list(outcome["routing"].values())[0]
+                        if isinstance(_first_r, dict):
+                            _tier = str(_first_r.get("tier", "unrouted"))
+                    elif "tier" in outcome:
+                        _tier = str(outcome["tier"])
                 with _owner._gov_lock:
                     if _gw_passed is True:
                         _owner._gov_gate_pass += 1
+                        _owner._gov_gate_pass_by_tool[tool_name] = (
+                            _owner._gov_gate_pass_by_tool.get(tool_name, 0) + 1)
+                        _tk = (tool_name, _tier)
+                        _owner._gov_gate_pass_by_tool_tier[_tk] = (
+                            _owner._gov_gate_pass_by_tool_tier.get(_tk, 0) + 1)
                     elif _gw_passed is False:
                         _owner._gov_gate_fail += 1
+                        _owner._gov_gate_fail_by_tool[tool_name] = (
+                            _owner._gov_gate_fail_by_tool.get(tool_name, 0) + 1)
+                        _tkf = (tool_name, _tier)
+                        _owner._gov_gate_fail_by_tool_tier[_tkf] = (
+                            _owner._gov_gate_fail_by_tool_tier.get(_tkf, 0) + 1)
                     if _gov_span is not None:
                         _owner._gov_tracer_spans += 1
+                        _owner._gov_tracer_spans_by_tool[tool_name] = (
+                            _owner._gov_tracer_spans_by_tool.get(tool_name, 0) + 1)
+                        _tk2 = (tool_name, _tier)
+                        _owner._gov_tracer_spans_by_tool_tier[_tk2] = (
+                            _owner._gov_tracer_spans_by_tool_tier.get(_tk2, 0) + 1)
                         if _gov_span.verdict == "hallucination":
                             _owner._gov_tracer_hallucinations += 1
-                        _owner._gov_tracer_drift_sum += max(0.0, 1.0 - _gov_span.similarity)
+                            _owner._gov_tracer_hall_by_tool[tool_name] = (
+                                _owner._gov_tracer_hall_by_tool.get(tool_name, 0) + 1)
+                        drift_delta = max(0.0, 1.0 - _gov_span.similarity)
+                        _owner._gov_tracer_drift_sum += drift_delta
+                        _owner._gov_tracer_drift_by_tool[tool_name] = (
+                            _owner._gov_tracer_drift_by_tool.get(tool_name, 0.0) + drift_delta)
             # v3.9: remember the last result so resources/read can expose it.
             with self._tool_results_lock:
                 self._tool_results[tool_name] = {
@@ -1375,6 +1404,10 @@ class HTTPMCPServer:
         self._gov_tracer_spans_by_tool: Dict[str, int] = {}
         self._gov_tracer_hall_by_tool: Dict[str, int] = {}
         self._gov_tracer_drift_by_tool: Dict[str, float] = {}
+        # v3.20: tool+tier dual-label counters (TaskProfile routing tier)
+        self._gov_gate_pass_by_tool_tier: Dict[tuple, int] = {}
+        self._gov_gate_fail_by_tool_tier: Dict[tuple, int] = {}
+        self._gov_tracer_spans_by_tool_tier: Dict[tuple, int] = {}
 
     def send_response(self, code, message=None):
         """v3.19: delegate to the active HTTP handler (set per-request)."""
@@ -1459,6 +1492,13 @@ class HTTPMCPServer:
                 lines.append(f'charter_mcp_tracer_hallucinations_total{{tool="{tool}"}} {cnt}')
             for tool, val in sorted(self._gov_tracer_drift_by_tool.items()):
                 lines.append(f'charter_mcp_tracer_drift_sum{{tool="{tool}"}} {val:.6f}')
+            # v3.20: tool+tier dual-label metrics
+            for (tool, tier), cnt in sorted(self._gov_gate_pass_by_tool_tier.items()):
+                lines.append(f'charter_mcp_gate_pass_total{{tool="{tool}",tier="{tier}"}} {cnt}')
+            for (tool, tier), cnt in sorted(self._gov_gate_fail_by_tool_tier.items()):
+                lines.append(f'charter_mcp_gate_fail_total{{tool="{tool}",tier="{tier}"}} {cnt}')
+            for (tool, tier), cnt in sorted(self._gov_tracer_spans_by_tool_tier.items()):
+                lines.append(f'charter_mcp_tracer_spans_total{{tool="{tool}",tier="{tier}"}} {cnt}')
         return {"text": "\n".join(lines) + "\n"}
 
     def _handle_metrics(self) -> None:
