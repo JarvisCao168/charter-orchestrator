@@ -26,7 +26,7 @@ from charter.mcp_server import (
 
 
 def test_version_is_v3_5():
-    assert __version__.startswith("3.13")
+    assert __version__.startswith("3.14")
 
 
 # ---------------------------------------------------------------------------
@@ -34,7 +34,7 @@ def test_version_is_v3_5():
 # ---------------------------------------------------------------------------
 
 def test_tool_definitions_count():
-    assert len(TOOL_DEFINITIONS) == 24, f"expected 24 tools, got {len(TOOL_DEFINITIONS)}"
+    assert len(TOOL_DEFINITIONS) == 25, f"expected 25 tools, got {len(TOOL_DEFINITIONS)}"
 
 
 def test_tool_definitions_shape():
@@ -61,13 +61,14 @@ def test_expected_tool_names_present():
         "enable_autonomous_mode", "trace_operation", "query_trace",
         # v3.13 governance tools
         "validate_output", "critic_plan", "trace_span", "route_task",
+        "plan_pipeline",
     }
     assert expected == names, f"missing: {expected - names}, extra: {names - expected}"
 
 
-def test_list_mcp_tools_returns_all_24():
+def test_list_mcp_tools_returns_all_25():
     tools = list_mcp_tools()
-    assert len(tools) == 24
+    assert len(tools) == 25
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +172,7 @@ def test_mcp_server_tools_list():
     server = CharterMCPServer()
     resp = server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
     assert resp["result"]["tools"], "tools should not be empty"
-    assert len(resp["result"]["tools"]) == 24
+    assert len(resp["result"]["tools"]) == 25
 
 
 def test_mcp_server_tools_call_init_project():
@@ -275,7 +276,7 @@ def test_http_server_construction():
 def test_mcp_tools_endpoint_shape():
     from charter.mcp_server import list_mcp_tools
     tools = list_mcp_tools()
-    assert len(tools) == 24
+    assert len(tools) == 25
     names = {t["name"] for t in tools}
     assert "init_project" in names and "dispatch_to_model" in names
     # each tool has a valid JSON-serializable inputSchema
