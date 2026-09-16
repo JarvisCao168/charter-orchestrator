@@ -9,7 +9,7 @@ Quick start:
     from charter import init_project, advance_stage, confirm_gate, query_status
     python -m charter.cli demo
 """
-__version__ = "3.19.0"
+__version__ = "3.20.0"
 from .core import (
     init_project, advance_stage, confirm_gate, query_status,
     save_checkpoint, restore_checkpoint,
