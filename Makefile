@@ -30,6 +30,8 @@ list-skill:
 #   make stress N=4 I=25             - 4 writers x 25 iterations by default
 #   make stress N=4 I=25 JSON=1     - machine-readable JSON (for CI artifacts)
 #   make stress N=4 I=25 OUT=cas_report.json  - also write JSON to a file
+#   make stress TIER=high            - high-pressure preset (16 writers x 100 rounds)
+#   make stress TIER=low             - low-pressure preset (2 writers x 10 rounds)
 stress:
 \t@if [ "$(JSON)" = "1" ]; then \
 \t\t$(PYTHON) -c "import sys, json; sys.path.insert(0, '.'); from charter import reference_kv_gateway, stress_multi_writer; srv, url, _ = reference_kv_gateway(); r = stress_multi_writer(n_writers=$(N), iterations=$(I), base_url=url, max_cas_retries=30); r['version']='3.18'; print(json.dumps(r, indent=2)); assert r['ok'], r; srv.shutdown()" ; \
@@ -45,6 +47,7 @@ N ?= 4
 I ?= 25
 JSON ?= 0
 OUT ?=
+TIER ?=
 
 # v3.17: big-pressure CAS preset (16 writers x 100 rounds, conflict-rate stats)
 stress-big:
