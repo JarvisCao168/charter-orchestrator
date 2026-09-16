@@ -184,6 +184,14 @@ def main(argv: list[str] | None = None) -> int:
         if len(argv) > 1 and argv[1] == "--gov":
             return demo_governance()
         return demo()
+    if argv[0] == "metrics-watch":
+        # v3.17: terminal dashboard for the MCP /metrics endpoint
+        #   python -m charter.cli metrics-watch --url http://127.0.0.1:8765/metrics --interval 1.0
+        return metrics_watch(argv[1:])
+    if argv[0] == "attach-audit":
+        # v3.17: post a --trace-out audit report to a GitHub PR
+        #   python -m charter.cli attach-audit --report gov_audit.json --pr 123 [--repo owner/name] [--gh base]
+        return attach_audit_to_pr(argv[1:])
     if argv[0] == "validate":
         import subprocess
         return subprocess.call([sys.executable,
@@ -204,7 +212,7 @@ def demo_governance() -> int:
     from charter.demo_skill import _demo_governance
 
     print("=" * 64)
-    print("Charter Orchestrator v3.16 - governance demo (--gov)")
+    print("Charter Orchestrator v3.17 - governance demo (--gov)")
     print("=" * 64)
 
     # Classic chain
@@ -321,6 +329,186 @@ def _demo_pipeline_l3_live() -> dict:
         "shared_l3_hit": n2.returncode == 0 and "cached: True" in n2.stdout
                          and "cached: False" in n1.stdout,
     }
+
+def _parse_metrics(text: str) -> dict:
+    """Parse a Prometheus text exposition into {metric_name{labels}: float}."""
+    out = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        # name{labels} value
+        if "{" in line:
+            name, rest = line.split("{", 1)
+            if "}" in rest:
+                labels, tail = rest.split("}", 1)
+                val = tail.strip()
+                if val:
+                    out[name + "{" + labels + "}"] = float(val)
+        else:
+            parts = line.split()
+            if len(parts) >= 2:
+                try:
+                    out[parts[0]] = float(parts[1])
+                except ValueError:
+                    pass
+    return out
+
+
+def metrics_watch(argv: list) -> int:
+    """v3.17: terminal dashboard that polls an MCP /metrics endpoint.
+
+    Renders the 5 governance audit counters (gate pass/fail, tracer spans /
+    hallucinations / drift) plus request counters, with deltas, in a
+    refreshable table. Ctrl-C to stop.
+    """
+    import time as _t
+    import urllib.request
+
+    url = None
+    interval = 2.0
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a in ("--url", "-u") and i + 1 < len(argv):
+            url = argv[i + 1]; i += 2
+        elif a == "--interval" and i + 1 < len(argv):
+            interval = float(argv[i + 1]); i += 2
+        else:
+            i += 1
+    if not url:
+        print("usage: python -m charter.cli metrics-watch --url http://host:port/metrics [--interval 2.0]")
+        return 2
+    keys = [
+        "charter_mcp_gate_pass_total",
+        "charter_mcp_gate_fail_total",
+        "charter_mcp_tracer_spans_total",
+        "charter_mcp_tracer_hallucinations_total",
+        "charter_mcp_tracer_drift_sum",
+    ]
+    prev = {}
+    try:
+        while True:
+            req = urllib.request.Request(url, headers={"User-Agent": "charter-metrics-watch"})
+            with urllib.request.urlopen(req, timeout=interval * 2 + 1) as r:
+                text = r.read().decode()
+            snap = _parse_metrics(text)
+            gate_p = snap.get("charter_mcp_gate_pass_total", 0.0)
+            gate_f = snap.get("charter_mcp_gate_fail_total", 0.0)
+            spans = snap.get("charter_mcp_tracer_spans_total", 0.0)
+            hall = snap.get("charter_mcp_tracer_hallucinations_total", 0.0)
+            drift = snap.get("charter_mcp_tracer_drift_sum", 0.0)
+            delta = ""
+            if prev:
+                d = lambda k: snap.get(k, 0.0) - prev.get(k, 0.0)
+                delta = (f"  \u0394 gate+{d('charter_mcp_gate_pass_total'):g}/"
+                         f"-{d('charter_mcp_gate_fail_total'):g} "
+                         f"spans+{d('charter_mcp_tracer_spans_total'):g} "
+                         f"hall+{d('charter_mcp_tracer_hallucinations_total'):g}")
+            print(f"\r[gov] gate pass={gate_p:g} fail={gate_f:g} | "
+                  f"spans={spans:g} halluc={hall:g} drift={drift:.3f}"
+                  f"{delta}   ", end="", flush=True)
+            prev = snap
+            _t.sleep(interval)
+    except KeyboardInterrupt:
+        print("\nmetrics-watch stopped")
+        return 0
+    except Exception as e:
+        print(f"metrics-watch error: {e}")
+        return 1
+
+
+def attach_audit_to_pr(argv: list) -> int:
+    """v3.17: post a ``--trace-out`` audit report to a GitHub PR as a comment.
+
+    Uses the local ``gh`` CLI if available (``gh pr comment``), otherwise
+    falls back to the GitHub REST API with CHARTER_GITHUB_TOKEN / GITHUB_TOKEN
+    (``POST /repos/{owner}/{repo}/issues/{number}/comments``). The report is
+    embedded as a fenced JSON code block with a short summary header.
+    """
+    import json as _json
+    import os as _os
+    import subprocess as _sp
+
+    report = None
+    pr = None
+    repo = None
+    token = None
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a in ("--report",) and i + 1 < len(argv):
+            report = argv[i + 1]; i += 2
+        elif a in ("--pr",) and i + 1 < len(argv):
+            pr = argv[i + 1]; i += 2
+        elif a in ("--repo",) and i + 1 < len(argv):
+            repo = argv[i + 1]; i += 2
+        elif a in ("--token",) and i + 1 < len(argv):
+            token = argv[i + 1]; i += 2
+        else:
+            print(f"unknown arg: {a}"); i += 1
+    if not report or not pr:
+        print("usage: python -m charter.cli attach-audit --report gov_audit.json --pr 123 "
+              "[--repo owner/name] [--token gh_xxx]")
+        return 2
+    if not _os.path.isfile(report):
+        print(f"report not found: {report}"); return 2
+    doc = _json.load(open(report, encoding="utf-8"))
+    summary = doc.get("summary", {})
+    body = ("### Charter semantic audit report\n\n"
+            f"- spans: {summary.get('spans')}\n"
+            f"- hallucinations: {summary.get('hallucinations')}\n"
+            f"- avg similarity: {summary.get('avg_similarity')}\n\n"
+            "```json\n" + _json.dumps(doc, ensure_ascii=False, indent=2) + "\n```")
+
+    # 1) prefer the gh CLI
+    gh = None
+    for cand in ("gh", "gh.exe"):
+        try:
+            _sp.run([cand, "--version"], capture_output=True, timeout=10)
+            gh = cand
+            break
+        except (FileNotFoundError, _sp.TimeoutExpired):
+            continue
+    if gh and repo is None:
+        r2 = _sp.run([gh, "repo", "view", "--json", "nameWithOwner"],
+                     capture_output=True, text=True, timeout=30)
+        if r2.returncode == 0:
+            repo = _json.loads(r2.stdout).get("nameWithOwner")
+    if gh and repo:
+        r3 = _sp.run([gh, "api",
+                      f"repos/{repo}/issues/{pr}/comments",
+                      "-f", "body=" + body[:50000]],
+                     capture_output=True, text=True, timeout=60)
+        if r3.returncode == 0:
+            print(f"posted audit report to PR #{pr} via gh ({repo})")
+            return 0
+    # 2) REST API fallback
+    tok = token or _os.environ.get("CHARTER_GITHUB_TOKEN") or _os.environ.get("GITHUB_TOKEN")
+    if not repo:
+        print("--repo owner/name is required for the REST fallback"); return 2
+    if not tok:
+        print("no gh CLI available and no token (CHARTER_GITHUB_TOKEN/GITHUB_TOKEN)"); return 2
+    import urllib.request
+    payload = {"body": body[:500000]}
+    req = _urllib_request(
+        f"https://api.github.com/repos/{repo}/issues/{pr}/comments",
+        data=_json.dumps(payload).encode(), token=tok, method="POST")
+    print(f"posted audit report to {repo} PR #{pr} via REST API")
+    return 0
+
+
+def _urllib_request(url, data=None, token=None, method="GET"):
+    import urllib.request, urllib.error, json as _j
+    h = {"User-Agent": "charter-orchestrator", "Content-Type": "application/json"}
+    if token:
+        h["Authorization"] = f"token {token}"
+    req = urllib.request.Request(url, data=data, headers=h, method=method)
+    with urllib.request.urlopen(req, timeout=30) as r:
+        raw = r.read().decode()
+        return r.status, (_j.loads(raw) if raw else None)
+
+
 
 def _demo_governance_live() -> dict:
     """v3.15: REAL cross-process L3 demo.
