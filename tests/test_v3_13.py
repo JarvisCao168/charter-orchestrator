@@ -11,7 +11,7 @@ import charter
 
 
 def test_version_is_v3_13():
-    assert charter.__version__.startswith("3.17")
+    assert charter.__version__.startswith("3.18")
 
 
 def test_repair_and_rerun_exported():
