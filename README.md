@@ -1,3 +1,6 @@
+<p align="center">
+  <a href="README.md">English</a> · <a href="README.zh-CN.md"><b>简体中文</b></a>
+</p>
 # Charter Orchestrator
 
 > **Full-Lifecycle Governance & Orchestration Framework for AI Agents**
