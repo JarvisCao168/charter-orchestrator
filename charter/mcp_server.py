@@ -879,7 +879,7 @@ def load_skill(skill_id: str) -> Dict[str, Any]:
 
 MCP_SERVER_INFO = {
     "name": "charter-orchestrator",
-    "version": "3.20.0",
+    "version": "3.21.0",
     "description": "Full-lifecycle governance & orchestration framework for AI agents. "
                    "Exposes 20 governance tools and 47 structured skills with "
                    "enforceable gates, TDD, guardrails, and human-confirmation points.",
@@ -1408,6 +1408,14 @@ class HTTPMCPServer:
         self._gov_gate_pass_by_tool_tier: Dict[tuple, int] = {}
         self._gov_gate_fail_by_tool_tier: Dict[tuple, int] = {}
         self._gov_tracer_spans_by_tool_tier: Dict[tuple, int] = {}
+        # v3.21: optional sweeper handle for charter_sweeper_* metrics
+        self._sweeper_handle = None
+
+    def register_sweeper(self, handle) -> None:
+        """v3.21: attach a SemanticCache sweeper handle so /metrics can
+        report ``charter_sweeper_*`` counters (sweeps_total, keys_swept_total,
+        uptime_s, running)."""
+        self._sweeper_handle = handle
 
     def send_response(self, code, message=None):
         """v3.19: delegate to the active HTTP handler (set per-request)."""
@@ -1499,6 +1507,26 @@ class HTTPMCPServer:
                 lines.append(f'charter_mcp_gate_fail_total{{tool="{tool}",tier="{tier}"}} {cnt}')
             for (tool, tier), cnt in sorted(self._gov_tracer_spans_by_tool_tier.items()):
                 lines.append(f'charter_mcp_tracer_spans_total{{tool="{tool}",tier="{tier}"}} {cnt}')
+            # v3.21: sweeper metrics
+            if self._sweeper_handle is not None:
+                try:
+                    ws = self._sweeper_handle.stats()
+                    lines += [
+                        "# HELP charter_sweeper_sweeps_total Total sweep cycles completed.",
+                        "# TYPE charter_sweeper_sweeps_total counter",
+                        f"charter_sweeper_sweeps_total {ws.get('sweeps_total', 0)}",
+                        "# HELP charter_sweeper_keys_swept_total Total keys purged across all tiers.",
+                        "# TYPE charter_sweeper_keys_swept_total counter",
+                        f"charter_sweeper_keys_swept_total {ws.get('keys_swept_total', 0)}",
+                        "# HELP charter_sweeper_uptime_seconds Sweeper thread uptime.",
+                        "# TYPE charter_sweeper_uptime_seconds gauge",
+                        f"charter_sweeper_uptime_seconds {ws.get('uptime_s', 0.0):.3f}",
+                        "# HELP charter_sweeper_running 1 when the sweeper thread is alive.",
+                        "# TYPE charter_sweeper_running gauge",
+                        f"charter_sweeper_running {1 if ws.get('running') else 0}",
+                    ]
+                except Exception:
+                    pass
         return {"text": "\n".join(lines) + "\n"}
 
     def _handle_metrics(self) -> None:
@@ -1583,10 +1611,20 @@ class HTTPMCPServer:
                 if "charter://metrics" in subs
             ]
         snap = self._metrics_payload()["text"]
+        # v3.21: include tool+tier breakdown so dashboards can render grouped views
+        with self._gov_lock:
+            tier_breakdown = {}
+            for (tool, tier), cnt in self._gov_gate_pass_by_tool_tier.items():
+                tier_breakdown.setdefault(tier, {})[f"gate_pass:{tool}"] = cnt
+            for (tool, tier), cnt in self._gov_gate_fail_by_tool_tier.items():
+                tier_breakdown.setdefault(tier, {})[f"gate_fail:{tool}"] = cnt
+            for (tool, tier), cnt in self._gov_tracer_spans_by_tool_tier.items():
+                tier_breakdown.setdefault(tier, {})[f"spans:{tool}"] = cnt
         notified = 0
         for key in subscribed_keys:
             if inner.notify_resource_changed("charter://metrics", key,
-                                              payload={"metrics": snap}):
+                                              payload={"metrics": snap,
+                                                       "tier_breakdown": tier_breakdown}):
                 notified += 1
         return notified
 
@@ -1701,14 +1739,22 @@ class HTTPMCPServer:
                             import json as _json
                             try:
                                 evt = _json.loads(item)
-                                new_snap = (evt.get("params") or {}).get("payload", {}).get("metrics")
+                                _payload = (evt.get("params") or {}).get("payload", {})
+                                new_snap = _payload.get("metrics")
                             except Exception:
                                 new_snap = None
+                                _payload = {}
                             if new_snap is None:
                                 new_snap = outer._metrics_payload()["text"]
                             data_lines = "".join(
                                 f"data: {line}\n" for line in new_snap.splitlines())
-                            self.wfile.write(f"event: metrics\n{data_lines}\n".encode())
+                            # v3.21: forward tier breakdown so dashboards render grouped views
+                            _tb = _payload.get("tier_breakdown")
+                            _tb_line = ""
+                            if _tb:
+                                import json as _j2
+                                _tb_line = f"data: tier_breakdown={_j2.dumps(_tb, ensure_ascii=False)}\n"
+                            self.wfile.write(f"event: metrics\n{data_lines}{_tb_line}\n".encode())
                             self.wfile.flush()
                     else:
                         while True:
