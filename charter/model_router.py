@@ -349,13 +349,20 @@ class SemanticCache:
                 pass
 
     def start_sweeper(self, interval_s: float = 30.0,
-                      reconcile: bool = False) -> "SweeperHandle":
+                      reconcile: bool = False,
+                      http_server=None) -> "SweeperHandle":
         """v3.20: start a background thread that periodically calls
         ``sweep_expired()`` (and optionally ``reconcile(repair=True)``).
+
+        v3.22: ``http_server`` — when an ``HTTPMCPServer`` instance is passed,
+        the returned :class:`SweeperHandle` is automatically registered via
+        ``http_server.register_sweeper(handle)`` so ``/metrics`` emits
+        ``charter_sweeper_*`` counters without manual wiring.
 
         Args:
             interval_s: how often to sweep (default 30s).
             reconcile: also run ``reconcile(repair=True)`` after each sweep.
+            http_server: optional ``HTTPMCPServer`` for auto-registration.
 
         Returns:
             A :class:`SweeperHandle` with ``stop()`` and ``last_sweep``
@@ -428,7 +435,11 @@ class SemanticCache:
                         "last_reconcile": self._state.get("last_reconcile"),
                     }
 
-        return _Handle(t, stop_evt, state, counters, counters_lock, started_at)
+        handle = _Handle(t, stop_evt, state, counters, counters_lock, started_at)
+        # v3.22: auto-register with the HTTP server for /metrics exposure
+        if http_server is not None and hasattr(http_server, "register_sweeper"):
+            http_server.register_sweeper(handle)
+        return handle
 
     def sweep_expired(self) -> Dict[str, Any]:
         """v3.19: proactively purge all TTL-expired keys across L1/L2/L3.
