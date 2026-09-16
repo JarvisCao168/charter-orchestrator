@@ -16,8 +16,8 @@ def main():
         skill = f.read()
     # 1. Tools declared in SKILL.md
     tools = set(re.findall(r"^#### tool:\s+(\S+)", skill, re.MULTILINE))
-    if len(tools) != 24:
-        errors.append(f"SKILL.md tool count {len(tools)} != 24")
+    if len(tools) != 25:
+        errors.append(f"SKILL.md tool count {len(tools)} != 25")
     # 2. Manifest (new nested structure)
     with open(MANIFEST, encoding="utf-8") as f:
         m = json.load(f)
