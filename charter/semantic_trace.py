@@ -31,8 +31,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 
 __all__ = [
     "SemanticSpan", "SemanticTracer", "cosine_similarity",
-    "make_embedder", "TraceVerdict",
-]
+    "make_embedder", "TraceVerdict", "export_audit_report"]
 
 
 # ---------------------------------------------------------------------------
@@ -176,3 +175,43 @@ class SemanticTracer:
                                if self.spans else 0.0),
             "threshold": self.threshold,
         }
+
+    def to_json(self) -> str:
+        """v3.16: export the full audit timeline as JSON.
+
+        The output is a self-contained, machine-readable audit report:
+        tracer-level summary + every span (id, ts, tool, texts, similarity,
+        verdict) in chronological order. Suitable for compliance / replay:
+        pipe it to a log store or attach to a PR / incident.
+        """
+        import json as _json
+        doc = {
+            "tracer": "SemanticTracer",
+            "version": "3.16",
+            "summary": self.summary(),
+            "spans": [
+                {
+                    "span_id": s.span_id,
+                    "ts": s.ts,
+                    "tool": s.meta.get("tool") if s.meta else None,
+                    "similarity": round(s.similarity, 6),
+                    "verdict": s.verdict,
+                    "input": s.input_text,
+                    "output": s.output_text,
+                }
+                for s in self.spans
+            ],
+        }
+        return _json.dumps(doc, ensure_ascii=False, indent=2, default=str)
+
+    def export(self, path: str) -> str:
+        """v3.16: write :meth:`to_json` to ``path`` and return the path."""
+        import os as _os
+        _os.makedirs(_os.path.dirname(_os.path.abspath(path)), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(self.to_json())
+        return path
+
+def export_audit_report(tracer: "SemanticTracer", path: str) -> str:
+    """v3.16: convenience wrapper: write ``tracer`` as a JSON audit report."""
+    return tracer.export(path)
