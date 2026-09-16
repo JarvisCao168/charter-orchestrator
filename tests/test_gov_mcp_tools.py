@@ -18,7 +18,7 @@ from charter.mcp_server import list_mcp_tools, run_tool
 
 def test_tool_count_is_24():
     tools = list_mcp_tools()
-    assert len(tools) == 24, f"expected 24 tools, got {len(tools)}"
+    assert len(tools) == 25, f"expected 25 tools, got {len(tools)}"
     names = {t["name"] for t in tools}
     for t in ("validate_output", "critic_plan", "trace_span", "route_task"):
         assert t in names, f"gov tool {t} missing from MCP surface"
