@@ -8,7 +8,7 @@ description: >
   managing project checkpoints, routing model dispatch, or auditing
   agent operations against governance rules.
 license: MIT
-version: "3.13.0"
+version: "3.14.0"
 author: JarvisCao168
 tags:
   - agent-governance
@@ -1148,3 +1148,8 @@ v1.0 为首次公开发布版本，包含以下全量能力：
 #### tool: route_task
 - Route a task profile to the optimal model tier via ModelRouter; optional SemanticCache write
 - Args: `depth?`, `fan_in?`, `risk?`, `tokens?`, `requires_reasoning?`, `use_cache?`, `cache_key?`
+#### tool: plan_pipeline
+- Plan-to-routing pipeline (v3.14): run the Critic on a plan DAG, optionally
+  repair-and-recheck (`closed_loop`), then route every step of the final plan
+  to its optimal model tier. Args: `plan`, `outputs?`, `closed_loop?`,
+  `max_rounds?`, `depth_scale?`, `default_risk?`, `default_tokens?`.
