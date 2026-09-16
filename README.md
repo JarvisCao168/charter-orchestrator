@@ -215,6 +215,21 @@ python -m charter.mcp_server     # stdio JSON-RPC
 
 455 测试（原 402 + 53），3.9 / 3.11 / 3.12 全绿。
 
+## 🔄 v3.21 — Sweeper 统计 + Webhook 重试 + 压测 Tier + SSE 层级明细
+
+- **`SweeperHandle.stats()`**：`{sweeps_total, keys_swept_total,
+  uptime_s, running, last_sweep, last_reconcile}`；
+  `HTTPMCPServer.register_sweeper(handle)` 接入 `/metrics`
+  （`charter_sweeper_sweeps_total` / `keys_swept_total` /
+  `uptime_seconds` / `running`）。
+- **Webhook 重试队列**：`_WEBHOOK_RETRY_QUEUE` 内存队列 + 指数退避
+  （2s→4s→8s，最多 3 次）；`audit-loop` 每周期自动 drain 重试。
+- **`make stress TIER=high|low`**：high=16×100×50 / low=2×10×30；
+  JSON 输出带 `tier` 字段。
+- **SSE `tier_breakdown` 推送**：`/mcp/sse?stream=metrics` 事件附带
+  `{tier: {gate_pass:<tool>: n, ...}}` 明细，看板按 tier 分组渲染。
+- **测试**：553 全绿（3.9 / 3.11 / 3.12）。
+
 ## 🔄 v3.20 — 后台 GC 线程 + Webhook 审计 + CI 压测校验 + 双标签指标
 
 - **`start_sweeper()` 后台 GC**：`cache.start_sweeper(interval_s=30,
