@@ -220,7 +220,7 @@ def demo_governance() -> int:
     from charter.demo_skill import _demo_governance
 
     print("=" * 64)
-    print("Charter Orchestrator v3.20 - governance demo (--gov)")
+    print("Charter Orchestrator v3.21 - governance demo (--gov)")
     print("=" * 64)
 
     # Classic chain
@@ -606,6 +606,43 @@ def _webhook_post(payload: dict, url: str, timeout_s: int = 15) -> tuple:
         return False, str(e)[:200]
 
 
+# v3.21: in-memory webhook retry queue (exponential backoff, max 3 attempts)
+_WEBHOOK_RETRY_QUEUE: list = []  # [(payload, url, attempt, next_retry_ts)]
+_WEBHOOK_RETRY_LOCK = __import__("threading").Lock()
+_WEBHOOK_MAX_ATTEMPTS = 3
+
+
+def _webhook_enqueue_retry(payload: dict, url: str, attempt: int, delay_s: float) -> None:
+    """v3.21: add a failed webhook post to the retry queue."""
+    import time as _t
+    next_ts = _t.time() + delay_s
+    with _WEBHOOK_RETRY_LOCK:
+        _WEBHOOK_RETRY_QUEUE.append((payload, url, attempt, next_ts))
+
+
+def _webhook_process_retries() -> int:
+    """v3.21: drain the retry queue; returns the number of successfully retried items."""
+    import time as _t
+    now = _t.time()
+    with _WEBHOOK_RETRY_LOCK:
+        pending = [item for item in _WEBHOOK_RETRY_QUEUE if item[3] <= now]
+        remaining = [item for item in _WEBHOOK_RETRY_QUEUE if item[3] > now]
+        _WEBHOOK_RETRY_QUEUE[:] = remaining
+    retried = 0
+    for payload, url, attempt, _ in pending:
+        ok, _msg = _webhook_post(payload, url, timeout_s=15)
+        if ok:
+            retried += 1
+        else:
+            new_attempt = attempt + 1
+            if new_attempt <= _WEBHOOK_MAX_ATTEMPTS:
+                delay = min(2 ** new_attempt, 30.0)  # exponential backoff: 2s, 4s, 8s...
+                _webhook_enqueue_retry(payload, url, new_attempt, delay)
+            else:
+                print(f"webhook: giving up after {attempt} retries ({url})")
+    return retried
+
+
 def audit_loop(argv: list) -> int:
     """v3.18: periodic governance audit + auto-attach to a PR.
 
@@ -714,6 +751,10 @@ def audit_loop(argv: list) -> int:
                 print(f"[{cycle}] audit posted ({status}) report={_os.path.basename(report)}")
             # v3.20: optional webhook delivery (Slack/Discord/Feishu)
             if webhook_url:
+                # v3.21: process pending retries before new posts
+                _n_retried = _webhook_process_retries()
+                if _n_retried:
+                    print(f"[{cycle}] webhook: retried {_n_retried} pending item(s)")
                 import json as _json2
                 with open(report, encoding="utf-8") as _rf:
                     report_doc = _json2.load(_rf)
@@ -728,7 +769,13 @@ def audit_loop(argv: list) -> int:
                                        f"halluc={_summary.get('hallucinations')} "
                                        f"avg_sim={_summary.get('avg_similarity')}")}
                 wok, wmsg = _webhook_post(payload, webhook_url)
-                print(f"[{cycle}] webhook: {wmsg}")
+                if wok:
+                    print(f"[{cycle}] webhook: ok ({wmsg})")
+                else:
+                    # v3.21: enqueue for retry with exponential backoff
+                    import time as _t_retry
+                    _webhook_enqueue_retry(payload, webhook_url, 1, delay_s=2.0)
+                    print(f"[{cycle}] webhook: failed ({wmsg}), queued for retry")
             cycle += 1
             if cycles and cycle >= cycles:
                 break
