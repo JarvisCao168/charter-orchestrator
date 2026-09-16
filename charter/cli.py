@@ -196,6 +196,10 @@ def main(argv: list[str] | None = None) -> int:
         # v3.18: periodic governance audit + auto-attach to PR
         #   python -m charter.cli audit-loop --pr 42 [--repo o/n] [--interval 30] [--cycles 0]
         return audit_loop(argv[1:])
+    if argv[0] == "validate-stress-report":
+        # v3.19: validate a CAS stress JSON report
+        #   python -m charter.cli validate-stress-report cas_report.json
+        return validate_stress_report(argv[1:])
     if argv[0] == "validate":
         import subprocess
         return subprocess.call([sys.executable,
@@ -216,7 +220,7 @@ def demo_governance() -> int:
     from charter.demo_skill import _demo_governance
 
     print("=" * 64)
-    print("Charter Orchestrator v3.18 - governance demo (--gov)")
+    print("Charter Orchestrator v3.19 - governance demo (--gov)")
     print("=" * 64)
 
     # Classic chain
@@ -411,9 +415,18 @@ def metrics_watch(argv: list) -> int:
                      f"-{d('charter_mcp_gate_fail_total'):g} "
                      f"spans+{d('charter_mcp_tracer_spans_total'):g} "
                      f"hall+{d('charter_mcp_tracer_hallucinations_total'):g}")
+        # v3.19: per-tool breakdown (top 3 by gate_fail)
+        tool_lines = []
+        for tool, cnt in sorted(
+                {k: v for k, v in snap.items() if k.startswith('charter_mcp_gate_fail_total{tool=')}.items(),
+                key=lambda x: -v):
+            tool_lines.append(f"{k.split('tool=')[1].rstrip('}')}:{cnt:g}")
+            if len(tool_lines) >= 3:
+                break
+        tool_str = " | " + ", ".join(tool_lines) if tool_lines else ""
         print(f"\r[gov:{source}] gate pass={gate_p:g} fail={gate_f:g} | "
               f"spans={spans:g} halluc={hall:g} drift={drift:.3f}"
-              f"{delta}   ", end="", flush=True)
+              f"{delta}{tool_str}   ", end="", flush=True)
 
     sse_stop = _th.Event()
 
@@ -578,24 +591,29 @@ def _urllib_request(url, data=None, token=None, method="GET"):
 def audit_loop(argv: list) -> int:
     """v3.18: periodic governance audit + auto-attach to a PR.
 
-    Repeatedly runs the ``demo --gov --trace-out`` pipeline (writing a fresh
-    JSON audit report each cycle) and posts it to a GitHub PR as a comment.
-    Use ``--interval`` for the cycle period and ``--cycles`` to bound the
-    run (0 = run until Ctrl-C).
+    v3.19: adds ``--metrics-url`` (health check) and ``--dry-run``.
+    Each cycle: (1) GET the metrics URL to confirm the server is online;
+    if offline, skip the cycle and log it. (2) Run ``demo --gov
+    --trace-out``. (3) Post the report to the PR (skipped in --dry-run).
 
     Usage:
-      python -m charter.cli audit-loop --pr 42 --repo o/n --interval 30 --cycles 3
+      python -m charter.cli audit-loop --pr 42 --repo o/n --interval 30
+        [--cycles 0] [--out-dir /tmp] [--metrics-url http://host:port/metrics]
+        [--dry-run]
     """
     import time as _t
     import os as _os
     import subprocess as _sp
     import sys as _sys
+    import urllib.request as _ur
 
     pr = None
     repo = None
     interval = 30.0
     cycles = 0
     out_dir = None
+    metrics_url = None
+    dry_run = False
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -609,19 +627,48 @@ def audit_loop(argv: list) -> int:
             cycles = int(argv[i + 1]); i += 2
         elif a == "--out-dir" and i + 1 < len(argv):
             out_dir = argv[i + 1]; i += 2
+        elif a == "--metrics-url" and i + 1 < len(argv):
+            metrics_url = argv[i + 1]; i += 2
+        elif a == "--dry-run":
+            dry_run = True; i += 1
         else:
             i += 1
     if not pr:
-        print("usage: python -m charter.cli audit-loop --pr 42 [--repo o/n] [--interval 30] [--cycles 0] [--out-dir /tmp]")
+        print("usage: python -m charter.cli audit-loop --pr 42 [--repo o/n] [--interval 30]"
+              " [--cycles 0] [--out-dir /tmp] [--metrics-url http://host:port/metrics] [--dry-run]")
         return 2
     if out_dir is None:
         import tempfile
         out_dir = tempfile.mkdtemp(prefix="charter-audit-")
     _os.makedirs(out_dir, exist_ok=True)
-    print(f"audit-loop: PR #{pr} interval={interval}s cycles={cycles or chr(8734)} out_dir={out_dir}")
+    mode = "dry-run" if dry_run else "live"
+    print(f"audit-loop: PR #{pr} interval={interval}s cycles={cycles or chr(8734)}"
+          f" out_dir={out_dir} mode={mode}"
+          + (f" metrics_url={metrics_url}" if metrics_url else ""))
+
+    def _health_check() -> bool:
+        """v3.19: GET the metrics URL; return True if the server is reachable."""
+        if not metrics_url:
+            return True  # no health check configured
+        try:
+            req = _ur.Request(metrics_url, headers={"User-Agent": "charter-audit-loop"})
+            with _ur.urlopen(req, timeout=5) as r:
+                return r.status == 200
+        except Exception:
+            return False
+
     cycle = 0
+    offline_skips = 0
     try:
         while True:
+            # v3.19: health gate
+            if not _health_check():
+                offline_skips += 1
+                print(f"[{cycle}] server offline ({metrics_url}), skipping cycle")
+                if cycles and cycle + 1 >= cycles:
+                    break
+                _t.sleep(interval); cycle += 1
+                continue
             ts = _t.strftime("%Y%m%d-%H%M%S")
             report = f"{out_dir}/gov_audit-{ts}.json"
             r = _sp.run(
@@ -635,17 +682,88 @@ def audit_loop(argv: list) -> int:
                     break
                 _t.sleep(interval); cycle += 1
                 continue
-            rc = attach_audit_to_pr(["--report", report, "--pr", str(pr)] + (["--repo", repo] if repo else []))
-            status = "ok" if rc == 0 else f"rc={rc}"
-            print(f"[{cycle}] audit posted ({status}) report={_os.path.basename(report)}")
+            if dry_run:
+                print(f"[{cycle}] dry-run: report written ({_os.path.basename(report)}), PR attach skipped")
+            else:
+                rc = attach_audit_to_pr(["--report", report, "--pr", str(pr)] + (["--repo", repo] if repo else []))
+                status = "ok" if rc == 0 else f"rc={rc}"
+                print(f"[{cycle}] audit posted ({status}) report={_os.path.basename(report)}")
             cycle += 1
             if cycles and cycle >= cycles:
                 break
             _t.sleep(interval)
     except KeyboardInterrupt:
-        print(f"\naudit-loop stopped after {cycle} cycles")
+        print(f"\naudit-loop stopped after {cycle} cycles ({offline_skips} offline skips)")
         return 0
-    print(f"audit-loop complete: {cycle} cycles")
+    print(f"audit-loop complete: {cycle} cycles, {offline_skips} offline skips")
+    return 0
+
+
+def validate_stress_report(argv: list) -> int:
+    """v3.19: validate a CAS stress JSON report for schema completeness.
+
+    Checks that all required fields are present and that numeric fields
+    have the expected types. Exits 0 on success, 1 on validation failure,
+    2 on usage error.
+
+    Usage:
+      python -m charter.cli validate-stress-report cas_report.json
+    """
+    import json as _json
+
+    REQUIRED_FIELDS = {
+        "final": (int, float),
+        "expected": int,
+        "ok": bool,
+        "conflicts": int,
+        "ops": int,
+        "conflict_rate": (float, int),
+        "wall_s": (float, int),
+        "n_writers": int,
+        "iterations": int,
+    }
+
+    if len(argv) != 1:
+        print("usage: python -m charter.cli validate-stress-report <file.json>")
+        return 2
+
+    import os as _os
+    path = argv[0]
+    if not _os.path.isfile(path):
+        print(f"file not found: {path}")
+        return 1
+
+    try:
+        doc = _json.load(open(path, encoding="utf-8"))
+    except Exception as e:
+        print(f"invalid JSON: {e}")
+        return 1
+
+    if not isinstance(doc, dict):
+        print("report must be a JSON object")
+        return 1
+
+    errors = []
+    for field, expected_type in REQUIRED_FIELDS.items():
+        if field not in doc:
+            errors.append(f"missing field: {field}")
+        else:
+            val = doc[field]
+            # bool is a subclass of int in Python; exclude bool where int expected
+            if expected_type is int and isinstance(val, bool):
+                errors.append(f"field {field} must be int, got bool")
+            elif expected_type is bool and not isinstance(val, bool):
+                errors.append(f"field {field} must be bool, got {type(val).__name__}")
+            elif expected_type is (float, int) and not isinstance(val, (int, float)):
+                errors.append(f"field {field} must be numeric, got {type(val).__name__}")
+
+    if errors:
+        print(f"validation FAILED ({len(errors)} error(s)):")
+        for e in errors:
+            print(f"  - {e}")
+        return 1
+
+    print(f"validation OK: {len(REQUIRED_FIELDS)} required fields present in {path}")
     return 0
 
 
