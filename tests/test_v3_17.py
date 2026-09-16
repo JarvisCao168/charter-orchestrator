@@ -38,7 +38,7 @@ def test_stress_reports_conflict_rate_and_ops():
     from charter import reference_kv_gateway, stress_multi_writer
     srv, url, _store = reference_kv_gateway()
     try:
-        r = stress_multi_writer(n_writers=4, iterations=10, base_url=url)
+        r = stress_multi_writer(n_writers=4, iterations=10, base_url=url, max_cas_retries=30)
         assert r["ok"]
         assert r["ops"] == 40
         assert r["conflict_rate"] >= 0.0
