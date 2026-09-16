@@ -8,7 +8,7 @@ description: >
   managing project checkpoints, routing model dispatch, or auditing
   agent operations against governance rules.
 license: MIT
-version: "3.16.0"
+version: "3.17.0"
 author: JarvisCao168
 tags:
   - agent-governance
