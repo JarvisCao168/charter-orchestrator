@@ -215,6 +215,23 @@ python -m charter.mcp_server     # stdio JSON-RPC
 
 455 测试（原 402 + 53），3.9 / 3.11 / 3.12 全绿。
 
+## 🔄 v3.19 — TTL 清扫 + 审计健康检查 + 压测校验 + 按工具治理指标
+
+- **`sweep_expired()` TTL 清扫**：`SemanticCache.sweep_expired()` 定期
+  清除 L1/L2/L3 中 TTL 过期键（L3 写 tombstone），返回清除明细
+  （`l1_swept` / `l2_swept` / `l3_swept` / `swept`）。
+- **`audit-loop` 健康检查 + `--dry-run`**：`--metrics-url` 每周期先
+  GET 确认 server 在线，离线跳过并记录；`--dry-run` 只写报告不附 PR。
+- **`validate-stress-report`**：`charter.cli validate-stress-report
+  cas_report.json` 校验 9 个必需字段（类型 + 完整性），配合
+  `make stress JSON=1 OUT=file.json` 做 CI artifact 校验。
+- **按 tool 名治理指标**：`/metrics` 新增
+  `charter_mcp_gate_fail_total{tool="..."}` 等 5 个带标签计数器，
+  支持 Prometheus 多维查询；看板渲染 top-3 gate_fail 工具。
+- **Bug fix**：`do_POST` 剥离 query string 后再匹配路径（`?client=x`
+  不再 404）。
+- **测试**：536 全绿（3.9 / 3.11 / 3.12）。
+
 ## 🔄 v3.18 — 缓存自动对账修复 + 双源看板 + 周期审计 + 压测 JSON
 
 - **`reconcile(repair=True)` 自动修复**：`in_storage_only` 键从 L3/L2 回填
