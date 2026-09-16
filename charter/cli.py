@@ -220,7 +220,7 @@ def demo_governance() -> int:
     from charter.demo_skill import _demo_governance
 
     print("=" * 64)
-    print("Charter Orchestrator v3.21 - governance demo (--gov)")
+    print("Charter Orchestrator v3.22 - governance demo (--gov)")
     print("=" * 64)
 
     # Classic chain
@@ -402,6 +402,9 @@ def metrics_watch(argv: list) -> int:
     prev = {}
     latest_snap: dict = {}
 
+    # v3.22: tier_breakdown is a dict {tier: {gate_pass:<tool>: n, ...}}
+    tier_breakdown: dict = {}
+
     def _render(snap: dict, source: str) -> None:
         gate_p = snap.get("charter_mcp_gate_pass_total", 0.0)
         gate_f = snap.get("charter_mcp_gate_fail_total", 0.0)
@@ -424,9 +427,33 @@ def metrics_watch(argv: list) -> int:
             if len(tool_lines) >= 3:
                 break
         tool_str = " | " + ", ".join(tool_lines) if tool_lines else ""
+        # v3.22: tier-grouped summary (one line per tier, max 3)
+        tier_str = ""
+        if tier_breakdown:
+            tier_parts = []
+            for tier in sorted(tier_breakdown.keys()):
+                items = tier_breakdown[tier]
+                gp = sum(v for k, v in items.items() if k.startswith("gate_pass:"))
+                gf = sum(v for k, v in items.items() if k.startswith("gate_fail:"))
+                tier_parts.append(f"{tier}:p{gp:g}/f{gf:g}")
+                if len(tier_parts) >= 3:
+                    break
+            tier_str = " [tier] " + " ".join(tier_parts)
         print(f"\r[gov:{source}] gate pass={gate_p:g} fail={gate_f:g} | "
               f"spans={spans:g} halluc={hall:g} drift={drift:.3f}"
-              f"{delta}{tool_str}   ", end="", flush=True)
+              f"{delta}{tool_str}{tier_str}   ", end="", flush=True)
+
+    def _render_tier_table() -> None:
+        """v3.22: render a per-tier grouped table of gate_pass/fail counts."""
+        if not tier_breakdown:
+            return
+        lines = ["  tier-group summary:"]
+        for tier in sorted(tier_breakdown.keys()):
+            items = tier_breakdown[tier]
+            gp = sum(v for k, v in items.items() if k.startswith("gate_pass:"))
+            gf = sum(v for k, v in items.items() if k.startswith("gate_fail:"))
+            lines.append(f"    {tier:>6s}  gate_pass={gp:g}  gate_fail={gf:g}")
+        print("\n" + "\n".join(lines), flush=True)
 
     sse_stop = _th.Event()
 
@@ -457,6 +484,14 @@ def metrics_watch(argv: list) -> int:
                                 snap = _parse_metrics(text)
                                 if snap:
                                     _render(snap, "sse")
+                                # v3.22: parse tier_breakdown data line
+                                for dl in data_lines:
+                                    if dl.startswith("tier_breakdown="):
+                                        try:
+                                            tb = _json.loads(dl[len("tier_breakdown="):])
+                                            tier_breakdown.update(tb)
+                                        except Exception:
+                                            pass
                                 data_lines = []
                                 event_type = ""
                             else:
@@ -470,6 +505,7 @@ def metrics_watch(argv: list) -> int:
         sse_thread = _th.Thread(target=_sse_consumer, daemon=True)
         sse_thread.start()
 
+    _render_count = 0
     try:
         while True:
             if url:
@@ -481,15 +517,19 @@ def metrics_watch(argv: list) -> int:
                     if snap:
                         _render(snap, "poll")
                         prev = snap
+                        _render_count += 1
+                        # v3.22: render tier table every 5 renders
+                        if _render_count % 5 == 0:
+                            _render_tier_table()
                 except Exception:
                     pass
             if not url:
-                # SSE-only mode: just sleep and let the thread render
                 _t.sleep(interval)
             else:
                 _t.sleep(interval)
     except KeyboardInterrupt:
         sse_stop.set()
+        _render_tier_table()
         print("\nmetrics-watch stopped")
         return 0
     except Exception as e:
@@ -607,21 +647,106 @@ def _webhook_post(payload: dict, url: str, timeout_s: int = 15) -> tuple:
 
 
 # v3.21: in-memory webhook retry queue (exponential backoff, max 3 attempts)
+# v3.22: backed by an optional SQLite file so pending items survive a crash
 _WEBHOOK_RETRY_QUEUE: list = []  # [(payload, url, attempt, next_retry_ts)]
 _WEBHOOK_RETRY_LOCK = __import__("threading").Lock()
 _WEBHOOK_MAX_ATTEMPTS = 3
+_WEBHOOK_DB_PATH: str = ""  # empty = no persistence (pure in-memory mode)
+
+
+def _webhook_set_db_path(path: str) -> None:
+    """v3.22: set the SQLite path for webhook retry persistence.
+
+    When a non-empty path is given, the in-memory queue is mirrored to
+    ``path`` after every enqueue/dequeue so pending items survive a process
+    crash. On startup call :func:`_webhook_restore_from_db` to load any
+    items left over from a previous run.
+    """
+    global _WEBHOOK_DB_PATH
+    _WEBHOOK_DB_PATH = path or ""
+    if _WEBHOOK_DB_PATH:
+        _webhook_persist_queue()
+
+
+def _webhook_persist_queue() -> None:
+    """v3.22: write the current in-memory queue to the SQLite file."""
+    if not _WEBHOOK_DB_PATH:
+        return
+    import sqlite3, json as _j, time as _t
+    with _WEBHOOK_RETRY_LOCK:
+        items = [tuple(x) for x in _WEBHOOK_RETRY_QUEUE]
+    conn = sqlite3.connect(_WEBHOOK_DB_PATH)
+    conn.execute("CREATE TABLE IF NOT EXISTS webhook_retries ("
+                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                 "payload TEXT NOT NULL, url TEXT NOT NULL, "
+                 "attempt INTEGER NOT NULL, next_retry_ts REAL NOT NULL, "
+                 "created_at REAL NOT NULL)")
+    conn.execute("DELETE FROM webhook_retries")
+    for payload, url, attempt, next_ts in items:
+        conn.execute(
+            "INSERT INTO webhook_retries (payload, url, attempt, next_retry_ts, created_at) "
+            "VALUES (?,?,?,?,?)",
+            (_j.dumps(payload, ensure_ascii=False, default=str), url, attempt,
+             next_ts, _t.time()))
+    conn.commit()
+    conn.close()
+
+
+def _webhook_restore_from_db() -> int:
+    """v3.22: load pending retry items from the SQLite file into memory.
+
+    Returns the number of items restored. Items already in the in-memory
+    queue (same url + attempt) are skipped to avoid duplicates.
+    """
+    if not _WEBHOOK_DB_PATH:
+        return 0
+    import sqlite3, json as _j
+    try:
+        conn = sqlite3.connect(_WEBHOOK_DB_PATH)
+        rows = conn.execute(
+            "SELECT payload, url, attempt, next_retry_ts FROM webhook_retries").fetchall()
+        conn.close()
+    except Exception:
+        return 0
+    restored = 0
+    with _WEBHOOK_RETRY_LOCK:
+        existing = {(u, a) for _, u, a, _ in _WEBHOOK_RETRY_QUEUE}
+        for payload_json, url, attempt, next_ts in rows:
+            key = (url, attempt)
+            if key in existing:
+                continue
+            try:
+                payload = _j.loads(payload_json)
+            except Exception:
+                payload = {"text": payload_json[:500]}
+            _WEBHOOK_RETRY_QUEUE.append((payload, url, attempt, next_ts))
+            restored += 1
+        # Clear the DB table since we've imported everything
+    if restored:
+        try:
+            import sqlite3 as _sql2
+            conn = _sql2.connect(_WEBHOOK_DB_PATH)
+            conn.execute("DELETE FROM webhook_retries")
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+    return restored
 
 
 def _webhook_enqueue_retry(payload: dict, url: str, attempt: int, delay_s: float) -> None:
-    """v3.21: add a failed webhook post to the retry queue."""
+    """v3.21: add a failed webhook post to the retry queue.
+    v3.22: also mirrors to SQLite when persistence is enabled."""
     import time as _t
     next_ts = _t.time() + delay_s
     with _WEBHOOK_RETRY_LOCK:
         _WEBHOOK_RETRY_QUEUE.append((payload, url, attempt, next_ts))
+    _webhook_persist_queue()
 
 
 def _webhook_process_retries() -> int:
-    """v3.21: drain the retry queue; returns the number of successfully retried items."""
+    """v3.21: drain the retry queue; returns the number of successfully retried items.
+    v3.22: updates the SQLite mirror after each state change."""
     import time as _t
     now = _t.time()
     with _WEBHOOK_RETRY_LOCK:
@@ -636,10 +761,11 @@ def _webhook_process_retries() -> int:
         else:
             new_attempt = attempt + 1
             if new_attempt <= _WEBHOOK_MAX_ATTEMPTS:
-                delay = min(2 ** new_attempt, 30.0)  # exponential backoff: 2s, 4s, 8s...
+                delay = min(2 ** new_attempt, 30.0)
                 _webhook_enqueue_retry(payload, url, new_attempt, delay)
             else:
                 print(f"webhook: giving up after {attempt} retries ({url})")
+    _webhook_persist_queue()
     return retried
 
 
