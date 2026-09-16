@@ -29,7 +29,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 __all__ = ["TaskProfile", "ModelTier", "ModelRouter", "SemanticCache",
            "route_task", "DEFAULT_TIERS",
-           "SemanticCacheBackend", "HTTPKeyValueBackend", "make_remote_backend"]
+           "SemanticCacheBackend", "HTTPKeyValueBackend", "make_remote_backend",
+           "reference_kv_gateway", "stress_multi_writer"]
 
 
 # ---------------------------------------------------------------------------
@@ -297,6 +298,8 @@ class SemanticCache:
                     self._remote_versions[k] = {"v": envelope["__v"], "ts": envelope["__ts"]}
             except Exception:  # noqa: BLENT
                 pass
+        self._last_write_version = getattr(self, "_last_write_version", {})
+        self._last_write_version[k] = (self._remote_versions.get(k, {}).get("v") or 0)
 
     def __contains__(self, request: str) -> bool:
         return self.get(request) is not None or self._k(request) in self._peek()
@@ -434,12 +437,14 @@ class HTTPKeyValueBackend(SemanticCacheBackend):
             pass  # offline-safe: local layers already hold the value
 
     def put_if_version(self, key: str, value: Any, if_version: Optional[int] = None) -> bool:
-        """v3.14: optimistic-locked write. Only writes when the server-side
-        version equals ``if_version`` (or the key is absent when
-        ``if_version is None``). Returns True on success, False on conflict.
+        """v3.14/v3.15: ETag-style optimistic-locked write (CAS).
 
-        Implemented via the ``X-If-Version`` header; a conforming gateway
-        returns 409 on a mismatch. Offline-safe: network errors return False.
+        Writes only when the server-side version equals ``if_version`` (or the
+        key is absent when ``if_version is None``). Implemented via the
+        ``X-If-Version`` header; a conforming gateway returns **412
+        Precondition Failed** on a version mismatch (409 is also accepted for
+        older gateways). Returns True on success, False on conflict or any
+        offline error.
         """
         if self._closed:
             return False
@@ -447,8 +452,9 @@ class HTTPKeyValueBackend(SemanticCacheBackend):
         import urllib.request
         import urllib.error
         h = self._headers()
-        if if_version is not None:
-            h["X-If-Version"] = str(if_version)
+        # if_version None -> send X-If-Version=0 (expect the key to be at v0,
+        # i.e. absent or first write). A conforming gateway treats 0 as "new".
+        h["X-If-Version"] = str(if_version) if if_version is not None else "0"
         try:
             req = urllib.request.Request(
                 f"{self._base}/kv/{urllib.parse.quote(str(key))}",
@@ -458,9 +464,54 @@ class HTTPKeyValueBackend(SemanticCacheBackend):
                 r.read()
             return True
         except urllib.error.HTTPError as e:
-            return e.code != 409  # conflict -> False; other errors -> offline miss
+            return e.code not in (409, 412)  # conflict -> False; else offline miss
         except (urllib.error.URLError, TimeoutError, OSError):
             return False
+
+    def cas(self, key: str, read, write_fn, max_retries: int = 5,
+            sleep_s: float = 0.05) -> bool:
+        """v3.15: compare-and-swap loop over the remote store.
+
+        ``read`` is called to observe the current remote value (typically
+        ``self.get(key)``); ``write_fn(observed, version)`` returns the value
+        to write. The loop: GET version -> build new value -> CAS write; on
+        conflict it re-observes and retries up to ``max_retries`` times.
+        Returns True when the write landed, False on persistent conflict
+        (another writer kept winning) or offline.
+        """
+        for attempt in range(max(1, int(max_retries))):
+            # one round-trip: value + version observed together (no race window)
+            observed, version = self.observe(key)
+            new_value = write_fn(observed, version)
+            if new_value is None:
+                return True  # write_fn decided no write was needed
+            ok = self.put_if_version(key, new_value, if_version=version)
+            if ok:
+                return True
+            if sleep_s:
+                import time as _t
+                _t.sleep(sleep_s)
+        return False
+
+    def get_version(self, key: str) -> Optional[int]:
+        """v3.15: server-side version of ``key`` (ETag token), or None."""
+        raw = self.get(key)
+        if isinstance(raw, dict) and "__v" in raw:
+            return raw.get("__v")
+        return None
+
+    def observe(self, key: str) -> Tuple[Optional[Any], Optional[int]]:
+        """v3.15: single-GET atomic snapshot of ``(value, version)``.
+
+        One round-trip instead of get()+get_version(); closes the race
+        window where another writer lands between the two reads.
+        """
+        raw = self.get(key)
+        if raw is None:
+            return None, None
+        if isinstance(raw, dict) and "__v" in raw:
+            return raw.get("value"), raw.get("__v")
+        return raw, None
 
     def close(self) -> None:
         self._closed = True
@@ -500,3 +551,132 @@ class _NullBackend(SemanticCacheBackend):
 
     def name(self) -> str:
         return "null"
+
+
+# ---------------------------------------------------------------------------
+# v3.15: reference CAS-compliant KV gateway + multi-writer stress tool
+# ---------------------------------------------------------------------------
+
+def reference_kv_gateway(host: str = "127.0.0.1", port: int = 0,
+                         start: bool = True):
+    """A thread-hosted HTTP KV gateway implementing the full versioned surface:
+
+      - ``GET  {base}/kv/{key}``  -> 200 JSON envelope / 404
+      - ``POST {base}/kv/{key}``  -> writes; honours ``X-If-Version``:
+        returns **412 Precondition Failed** on mismatch, 200 on success.
+        Each write bumps the envelope ``__v`` by 1 (continuing the stored
+        version, so concurrent writers observe monotonic versions).
+
+    Returns ``(server, base_url, store_dict)``. The store dict is the single
+    source of truth: ``{key: {"__v": int, "__ts": float, "value": Any}}``.
+    """
+    import json
+    import threading as _th
+    import http.server as _hs
+    import urllib.parse as _up
+
+    store: Dict[str, Any] = {}
+    lock = _th.Lock()
+
+    class _Handler(_hs.BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            k = _up.unquote(self.path.split("/kv/")[-1])
+            with lock:
+                v = store.get(k)
+            if v is None:
+                self.send_response(404)
+                self.end_headers()
+            else:
+                b = json.dumps(v).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+
+        def do_POST(self):
+            k = _up.unquote(self.path.split("/kv/")[-1])
+            n = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(n).decode())
+            if_ver = self.headers.get("X-If-Version")
+            if_new = self.headers.get("X-If-New")
+            with lock:
+                cur = store.get(k)
+                cur_v = cur.get("__v") if isinstance(cur, dict) and "__v" in cur else None
+                if if_new == "1" and cur is not None:
+                    self.send_response(412)
+                    self.end_headers()
+                    return
+                if if_ver is not None:
+                    expect = int(if_ver)
+                    actual = cur_v if cur_v is not None else 0
+                    if expect != actual:
+                        self.send_response(412)
+                        self.end_headers()
+                        return
+                # If the body is a client envelope (__v present), honour its
+                # __v so the server version sequence is continuous; otherwise
+                # bump from the current server version.
+                if isinstance(body, dict) and "__v" in body:
+                    new_v = int(body["__v"])
+                    store[k] = body
+                else:
+                    base_v = cur_v if cur_v is not None else 0
+                    store[k] = {"__v": base_v + 1, "__ts": time.time(), "value": body}
+            self.send_response(200)
+            self.end_headers()
+
+    srv = _hs.ThreadingHTTPServer((host, port), _Handler)
+    if start:
+        _th.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://{host}:{srv.server_address[1]}"
+    return srv, url, store
+
+
+def stress_multi_writer(n_writers: int = 4, iterations: int = 25,
+                        base_url: str = "", store: Optional[Dict[str, Any]] = None,
+                        max_cas_retries: int = 10) -> Dict[str, Any]:
+    """v3.15: N concurrent writers each CAS-increment one shared counter.
+
+    Each writer runs ``cas(key, read=lambda: remote.get(key),
+    write_fn=lambda obs, v: (obs or 0) + 1)`` for ``iterations`` rounds,
+    resolving conflicts by re-observing and retrying. Returns a summary:
+    ``final`` (the shared value), ``expected`` (n_writers * iterations),
+    ``ok`` (they match), plus per-writer conflict counts.
+    """
+    import threading as _th
+    from concurrent.futures import ThreadPoolExecutor
+    from charter import make_remote_backend  # local import avoids cycle at module load
+
+    key = "counter"
+    remote = make_remote_backend("http", base_url, timeout_s=3.0) if base_url else None
+    if remote is None:
+        raise ValueError("stress_multi_writer requires a running gateway (base_url)")
+    conflicts = {"n": 0}
+
+    def one_writer(wid: int) -> int:
+        local_conf = 0
+        for _ in range(iterations):
+            ok = remote.cas(
+                key,
+                read=lambda: remote.get(key),
+                write_fn=lambda o, v: int(o + 1) if o is not None else 1,
+                max_retries=max_cas_retries, sleep_s=0.01)
+            if not ok:
+                local_conf += 1
+                conflicts["n"] += 1
+            else:
+                import time as _t
+                _t.sleep(0.01)  # widen the race window so conflicts are observable
+        return local_conf
+
+    with ThreadPoolExecutor(max_workers=n_writers) as pool:
+        list(pool.map(one_writer, range(n_writers)))
+    final_env = remote.get(key)
+    final = final_env.get("value") if isinstance(final_env, dict) else final_env
+    expected = n_writers * iterations
+    remote.close()
+    return {"final": final, "expected": expected,
+            "ok": final == expected, "conflicts": conflicts["n"]}
