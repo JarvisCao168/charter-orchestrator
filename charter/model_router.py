@@ -348,6 +348,60 @@ class SemanticCache:
             except Exception:  # noqa: BLENT
                 pass
 
+    def start_sweeper(self, interval_s: float = 30.0,
+                      reconcile: bool = False) -> "SweeperHandle":
+        """v3.20: start a background thread that periodically calls
+        ``sweep_expired()`` (and optionally ``reconcile(repair=True)``).
+
+        Args:
+            interval_s: how often to sweep (default 30s).
+            reconcile: also run ``reconcile(repair=True)`` after each sweep.
+
+        Returns:
+            A :class:`SweeperHandle` with ``stop()`` and ``last_sweep``
+            attributes. The thread is a daemon (won't block process exit).
+        """
+        import threading as _th
+        stop_evt = _th.Event()
+        state = {"last_sweep": None, "last_reconcile": None}
+
+        def _loop() -> None:
+            import time as _t
+            while not stop_evt.is_set():
+                rep = self.sweep_expired()
+                state["last_sweep"] = rep
+                if reconcile:
+                    state["last_reconcile"] = self.reconcile(repair=True)
+                stop_evt.wait(interval_s)
+
+        t = _th.Thread(target=_loop, daemon=True, name="charter-sweeper")
+        t.start()
+
+        class _Handle:
+            def __init__(self, thread: _th.Thread, stop_event: _th.Event,
+                         state_dict: dict) -> None:
+                self._thread = thread
+                self._stop_event = stop_event
+                self._state = state_dict
+
+            def stop(self) -> None:
+                self._stop_event.set()
+                self._thread.join(timeout=5.0)
+
+            @property
+            def last_sweep(self) -> Optional[Dict[str, Any]]:
+                return self._state.get("last_sweep")
+
+            @property
+            def last_reconcile(self) -> Optional[Dict[str, Any]]:
+                return self._state.get("last_reconcile")
+
+            @property
+            def running(self) -> bool:
+                return self._thread.is_alive() and not self._stop_event.is_set()
+
+        return _Handle(t, stop_evt, state)
+
     def sweep_expired(self) -> Dict[str, Any]:
         """v3.19: proactively purge all TTL-expired keys across L1/L2/L3.
 
