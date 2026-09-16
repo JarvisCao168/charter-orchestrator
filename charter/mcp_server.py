@@ -879,7 +879,7 @@ def load_skill(skill_id: str) -> Dict[str, Any]:
 
 MCP_SERVER_INFO = {
     "name": "charter-orchestrator",
-    "version": "3.18.0",
+    "version": "3.19.0",
     "description": "Full-lifecycle governance & orchestration framework for AI agents. "
                    "Exposes 20 governance tools and 47 structured skills with "
                    "enforceable gates, TDD, guardrails, and human-confirmation points.",
@@ -1348,6 +1348,9 @@ class HTTPMCPServer:
         # v3.7: register a notification sink on the inner MCP server so
         # resources/changed events are pushed onto the subscriber's SSE queue.
         self._server._notify_sink = self._push_notification
+        # v3.19: delegate send_response/send_header/end_headers/wfile to
+        # the active BaseHTTPRequestHandler so _handle_metrics works.
+        self._active_handler = None
         # Per-client SSE queues keyed by a client id.
         self._client_queues: Dict[str, "queue.Queue"] = {}
         self._clients_lock = threading.Lock()
@@ -1366,7 +1369,29 @@ class HTTPMCPServer:
         self._gov_tracer_spans: int = 0
         self._gov_tracer_hallucinations: int = 0
         self._gov_tracer_drift_sum: float = 0.0
+        # v3.19: per-tool labeled counters (Prometheus multi-dim queries)
+        self._gov_gate_pass_by_tool: Dict[str, int] = {}
+        self._gov_gate_fail_by_tool: Dict[str, int] = {}
+        self._gov_tracer_spans_by_tool: Dict[str, int] = {}
+        self._gov_tracer_hall_by_tool: Dict[str, int] = {}
+        self._gov_tracer_drift_by_tool: Dict[str, float] = {}
 
+    def send_response(self, code, message=None):
+        """v3.19: delegate to the active HTTP handler (set per-request)."""
+        if self._active_handler is not None:
+            self._active_handler.send_response(code, message)
+
+    def send_header(self, key, value):
+        if self._active_handler is not None:
+            self._active_handler.send_header(key, value)
+
+    def end_headers(self):
+        if self._active_handler is not None:
+            self._active_handler.end_headers()
+
+    @property
+    def wfile(self):
+        return self._active_handler.wfile if self._active_handler else None
     # -- metrics helpers ----------------------------------------------------
     def _inc_request(self, method: str, endpoint: str, status_code: int) -> None:
         status_class = f"{status_code // 100}xx"
@@ -1404,7 +1429,7 @@ class HTTPMCPServer:
             "# TYPE charter_mcp_uptime_seconds gauge",
             f"charter_mcp_uptime_seconds {uptime:.3f}",
         ]
-        # v3.16: governance audit metrics
+        # v3.16: governance audit metrics (aggregate)
         lines += [
             "# HELP charter_mcp_gate_pass_total Tool calls that passed the ValidationGateway.",
             "# TYPE charter_mcp_gate_pass_total counter",
@@ -1422,6 +1447,18 @@ class HTTPMCPServer:
             "# TYPE charter_mcp_tracer_drift_sum gauge",
             f"charter_mcp_tracer_drift_sum {self._gov_tracer_drift_sum:.6f}",
         ]
+        # v3.19: per-tool labeled governance metrics (Prometheus multi-dim)
+        with self._gov_lock:
+            for tool, cnt in sorted(self._gov_gate_pass_by_tool.items()):
+                lines.append(f'charter_mcp_gate_pass_total{{tool="{tool}"}} {cnt}')
+            for tool, cnt in sorted(self._gov_gate_fail_by_tool.items()):
+                lines.append(f'charter_mcp_gate_fail_total{{tool="{tool}"}} {cnt}')
+            for tool, cnt in sorted(self._gov_tracer_spans_by_tool.items()):
+                lines.append(f'charter_mcp_tracer_spans_total{{tool="{tool}"}} {cnt}')
+            for tool, cnt in sorted(self._gov_tracer_hall_by_tool.items()):
+                lines.append(f'charter_mcp_tracer_hallucinations_total{{tool="{tool}"}} {cnt}')
+            for tool, val in sorted(self._gov_tracer_drift_by_tool.items()):
+                lines.append(f'charter_mcp_tracer_drift_sum{{tool="{tool}"}} {val:.6f}')
         return {"text": "\n".join(lines) + "\n"}
 
     def _handle_metrics(self) -> None:
@@ -1518,6 +1555,9 @@ class HTTPMCPServer:
         outer = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+
             def log_message(self, *args):  # silence default stderr logging
                 return
 
@@ -1557,15 +1597,19 @@ class HTTPMCPServer:
                     self._send_json(404, {"error": "not found"})
 
             def do_POST(self):
+                # Strip the query string so path matching works with or
+                # without ?client=... (the handler reads cid from the query).
+                import urllib.parse as _up
+                _path_only = _up.urlparse(self.path).path
                 if not outer._auth_ok(self.headers):
-                    outer._inc_request("POST", self.path, 401)
+                    outer._inc_request("POST", _path_only, 401)
                     self._auth_deny()
                     return
-                if self.path == "/mcp/message":
+                if _path_only == "/mcp/message":
                     outer._inc_request("POST", "/mcp/message", 202)
                     self._handle_message()
                 else:
-                    outer._inc_request("POST", self.path, 404)
+                    outer._inc_request("POST", _path_only, 404)
                     self._send_json(404, {"error": "not found"})
 
             def _sse_stream(self):
